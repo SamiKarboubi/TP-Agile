@@ -1,4 +1,4 @@
-docker build -t frontend# --- Étape 1 : build ---
+# --- Etape 1 : build ---
 FROM node:22-alpine AS build
 
 WORKDIR /app
@@ -9,7 +9,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# --- Étape 2 : serveur nginx pour servir les fichiers statiques ---
+# --- Etape 2 : serveur nginx pour servir les fichiers statiques ---
 FROM nginx:alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
