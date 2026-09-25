@@ -7,7 +7,7 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run lint && npm run build
 
 # --- Etape 2 : serveur nginx pour servir les fichiers statiques ---
 FROM nginx:alpine
