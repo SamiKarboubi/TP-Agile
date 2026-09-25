@@ -196,7 +196,7 @@ function App() {
       const response = await fetch('/api/recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, favorite_ids: favoriteIds }),
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {

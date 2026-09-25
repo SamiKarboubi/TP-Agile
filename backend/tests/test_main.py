@@ -26,13 +26,17 @@ class FakeRecommender:
     def __init__(self) -> None:
         self.calls = 0
         self.lookup_ids: list[int] = []
+        self.favorite_ids: list[int] = []
 
     async def lookup_movies(self, ids: list[int]) -> list[MovieResult]:
         self.lookup_ids = ids
         return [MovieResult(id=movie_id, title=f"Film {movie_id}") for movie_id in ids]
 
-    async def recommend(self, _: MovieSearchIntent) -> RecommendationResponse:
+    async def recommend(
+        self, _: MovieSearchIntent, favorite_ids: list[int] | None = None
+    ) -> RecommendationResponse:
         self.calls += 1
+        self.favorite_ids = favorite_ids or []
         return RecommendationResponse(message="Résultat simulé", movies=[])
 
 
@@ -70,6 +74,29 @@ def test_movie_request_reaches_recommender() -> None:
     response = client.post("/api/recommendations", json={"message": "Je veux un thriller"})
     assert response.status_code == 200
     assert recommender.calls == 1
+
+
+def test_favorite_ids_are_passed_to_recommender_without_duplicates() -> None:
+    client, _, recommender = make_client()
+
+    response = client.post(
+        "/api/recommendations", json={"message": "Un thriller", "favorite_ids": [7, 3, 7]}
+    )
+
+    assert response.status_code == 200
+    assert recommender.favorite_ids == [7, 3]
+
+
+def test_invalid_favorite_ids_are_rejected() -> None:
+    client, _, recommender = make_client()
+
+    assert client.post(
+        "/api/recommendations", json={"message": "Un film", "favorite_ids": [0]}
+    ).status_code == 422
+    assert client.post(
+        "/api/recommendations", json={"message": "Un film", "favorite_ids": list(range(1, 22))}
+    ).status_code == 422
+    assert recommender.calls == 0
 
 
 def test_out_of_scope_request_uses_fixed_response_without_movie_calls() -> None:

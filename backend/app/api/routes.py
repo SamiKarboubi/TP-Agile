@@ -20,7 +20,9 @@ class IntentAnalyzer(Protocol):
 
 
 class Recommender(Protocol):
-    async def recommend(self, intent: MovieSearchIntent) -> RecommendationResponse: ...
+    async def recommend(
+        self, intent: MovieSearchIntent, favorite_ids: list[int] | None = None
+    ) -> RecommendationResponse: ...
 
     async def lookup_movies(self, ids: list[int]) -> list[MovieResult]: ...
 
@@ -50,7 +52,7 @@ def build_router(
         intent = await analyzer.analyze(request.message)
         if not intent.is_movie_request:
             return RecommendationResponse(message=OUT_OF_SCOPE_MESSAGE, movies=[])
-        return await recommender.recommend(intent)
+        return await recommender.recommend(intent, list(dict.fromkeys(request.favorite_ids)))
 
     @router.post("/movies/lookup", response_model=MovieLookupResponse)
     async def lookup_movies(request: MovieLookupRequest) -> MovieLookupResponse:
