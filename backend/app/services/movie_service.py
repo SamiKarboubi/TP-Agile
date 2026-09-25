@@ -73,17 +73,7 @@ class MovieRecommendationService:
         movies: list[MovieResult] = []
         for candidate in candidates:
             movie_id = int(candidate["id"])
-            detail = await self._mcp.call_tool(
-                "get_movie",
-                {
-                    "id": movie_id,
-                    "language": self._settings.tmdb_language,
-                    "region": self._settings.tmdb_region,
-                    "include_ratings": True,
-                },
-            )
-            credits = await self._mcp.call_tool("get_movie_credits", {"id": movie_id})
-            movie = _to_movie_result(detail, credits, batch_ratings.get(movie_id))
+            movie, credits = await self._load_movie(movie_id, batch_ratings.get(movie_id))
             if self._matches_required(movie, credits, intent.required, resolved):
                 movies.append(movie)
             if len(movies) >= self._settings.max_recommendations:
@@ -94,6 +84,37 @@ class MovieRecommendationService:
             or intent.preferred.watch_region
             or self._settings.tmdb_region
         ).strip().upper()
+        await self._enrich_movies(movies, watch_region)
+
+        return RecommendationResponse(
+            message=RESULTS_MESSAGE if movies else NO_EXACT_MATCH_MESSAGE,
+            movies=movies,
+        )
+
+    async def lookup_movies(self, ids: list[int]) -> list[MovieResult]:
+        movies: list[MovieResult] = []
+        for movie_id in ids:
+            movie, _ = await self._load_movie(movie_id)
+            movies.append(movie)
+        await self._enrich_movies(movies, self._settings.tmdb_region)
+        return movies
+
+    async def _load_movie(
+        self, movie_id: int, fallback_imdb_rating: float | None = None
+    ) -> tuple[MovieResult, dict[str, Any]]:
+        detail = await self._mcp.call_tool(
+            "get_movie",
+            {
+                "id": movie_id,
+                "language": self._settings.tmdb_language,
+                "region": self._settings.tmdb_region,
+                "include_ratings": True,
+            },
+        )
+        credits = await self._mcp.call_tool("get_movie_credits", {"id": movie_id})
+        return _to_movie_result(detail, credits, fallback_imdb_rating), credits
+
+    async def _enrich_movies(self, movies: list[MovieResult], watch_region: str) -> None:
         for movie in movies:
             try:
                 providers = await self._mcp.call_tool(
@@ -120,11 +141,6 @@ class MovieRecommendationService:
             except MCPServiceError:
                 videos = {}
             movie.trailer_url = _trailer_url(videos)
-
-        return RecommendationResponse(
-            message=RESULTS_MESSAGE if movies else NO_EXACT_MATCH_MESSAGE,
-            movies=movies,
-        )
 
     async def _resolve_required_entities(self, constraints: MovieConstraints) -> ResolvedEntities:
         resolved = ResolvedEntities()

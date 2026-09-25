@@ -2,11 +2,24 @@ import { useEffect, useRef, useState } from 'react'
 import './App.css'
 
 const DEFAULT_MAX_LENGTH = 200
+const FAVORITES_KEY = 'moviematch:favorites'
+const MAX_FAVORITES = 20
 const SUGGESTIONS = [
   'Un thriller après 2010, très bien noté',
   'Un film dans le style d’Interstellar',
   'Une comédie française à voir ce soir',
 ]
+
+function readFavoriteIds() {
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(FAVORITES_KEY) || '[]')
+    if (!Array.isArray(saved)) return []
+    return [...new Set(saved.filter((id) => Number.isSafeInteger(id) && id > 0))]
+      .slice(0, MAX_FAVORITES)
+  } catch {
+    return []
+  }
+}
 
 function formatRuntime(minutes) {
   if (!minutes) return null
@@ -15,7 +28,7 @@ function formatRuntime(minutes) {
   return hours ? `${hours} h ${remaining ? `${remaining} min` : ''}`.trim() : `${minutes} min`
 }
 
-function MovieCard({ movie }) {
+function MovieCard({ movie, isFavorite, onToggleFavorite, favoriteLimitReached }) {
   const offers = [
     ['Abonnement', movie.streaming],
     ['Gratuit', movie.free],
@@ -71,6 +84,15 @@ function MovieCard({ movie }) {
           ) : <p className="availability-empty">Aucune plateforme renseignée pour ce pays.</p>}
           <div className="movie-actions">
             {movie.trailer_url && <a className="primary-link" href={movie.trailer_url} target="_blank" rel="noopener noreferrer">Voir la bande-annonce <span aria-hidden="true">↗</span></a>}
+            <button
+              className={`favorite-toggle ${isFavorite ? 'is-favorite' : ''}`}
+              type="button"
+              aria-pressed={isFavorite}
+              aria-label={isFavorite ? `Retirer ${movie.title} des favoris` : `Ajouter ${movie.title} aux favoris`}
+              title={!isFavorite && favoriteLimitReached ? 'Limite de 20 favoris atteinte' : undefined}
+              disabled={!isFavorite && favoriteLimitReached}
+              onClick={() => onToggleFavorite(movie)}
+            ><span aria-hidden="true">{isFavorite ? '♥' : '♡'}</span> {isFavorite ? 'Dans mes favoris' : 'Ajouter aux favoris'}</button>
           </div>
           {offers.length > 0 && <small>Disponibilités : JustWatch via TMDB · Les offres peuvent évoluer.</small>}
         </div>
@@ -85,6 +107,12 @@ function App() {
   const [conversation, setConversation] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [view, setView] = useState('discover')
+  const [favoriteIds, setFavoriteIds] = useState(readFavoriteIds)
+  const [favoriteMovies, setFavoriteMovies] = useState({})
+  const [favoritesLoading, setFavoritesLoading] = useState(false)
+  const [favoritesError, setFavoritesError] = useState('')
+  const [storageError, setStorageError] = useState(false)
   const endRef = useRef(null)
   const textRef = useRef(null)
 
@@ -96,8 +124,59 @@ function App() {
   }, [])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [conversation, loading])
+    if (view === 'discover') endRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [conversation, loading, view])
+
+  function saveFavoriteIds(ids) {
+    setFavoriteIds(ids)
+    try {
+      window.sessionStorage.setItem(FAVORITES_KEY, JSON.stringify(ids))
+      setStorageError(false)
+    } catch {
+      setStorageError(true)
+    }
+  }
+
+  async function showFavorites() {
+    setView('favorites')
+    const missing = favoriteIds.filter((id) => !favoriteMovies[id])
+    if (!missing.length || favoritesLoading) return
+
+    setFavoritesLoading(true)
+    setFavoritesError('')
+    try {
+      const response = await fetch('/api/movies/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: missing }),
+      })
+      if (!response.ok) throw new Error('Impossible de retrouver vos films favoris.')
+      const data = await response.json()
+      if (!Array.isArray(data.movies) || data.movies.length !== missing.length
+        || missing.some((id) => !data.movies.some((movie) => movie.id === id))) {
+        throw new Error('Certaines fiches de films sont indisponibles.')
+      }
+      setFavoriteMovies((current) => ({
+        ...current,
+        ...Object.fromEntries(data.movies.map((movie) => [movie.id, movie])),
+      }))
+    } catch (requestError) {
+      setFavoritesError(requestError.message || 'Impossible de charger les favoris.')
+    } finally {
+      setFavoritesLoading(false)
+    }
+  }
+
+  function toggleFavorite(movie) {
+    setFavoritesError('')
+    if (favoriteIds.includes(movie.id)) {
+      saveFavoriteIds(favoriteIds.filter((id) => id !== movie.id))
+      return
+    }
+    if (favoriteIds.length >= MAX_FAVORITES) return
+    setFavoriteMovies((movies) => ({ ...movies, [movie.id]: movie }))
+    saveFavoriteIds([...favoriteIds, movie.id])
+  }
 
   async function submit(event) {
     event?.preventDefault()
@@ -152,10 +231,13 @@ function App() {
           <h1>MovieMatch</h1>
           <p>LE BON FILM, AU BON MOMENT</p>
         </div>
-        <span className="header-edition">VOTRE SÉLECTION CINÉMA</span>
+        <nav className="view-nav" aria-label="Navigation principale">
+          <button type="button" className={view === 'discover' ? 'active' : ''} aria-current={view === 'discover' ? 'page' : undefined} onClick={() => setView('discover')}>Découvrir</button>
+          <button type="button" className={view === 'favorites' ? 'active' : ''} aria-current={view === 'favorites' ? 'page' : undefined} onClick={showFavorites}>Favoris <span>{favoriteIds.length}</span></button>
+        </nav>
       </header>
 
-      <section className="conversation" aria-live="polite" aria-label="Conversation">
+      <section className="conversation" aria-live="polite" aria-label="Conversation" hidden={view !== 'discover'}>
         {conversation.length === 0 && (
           <div className="welcome">
             <span className="eyebrow">LE FILM DE CE SOIR COMMENCE ICI</span>
@@ -180,7 +262,15 @@ function App() {
               <p>{item.text}</p>
               {item.movies?.length > 0 && (
                 <div className="movie-list">
-                  {item.movies.map((movie) => <MovieCard movie={movie} key={movie.id} />)}
+                  {item.movies.map((movie) => (
+                    <MovieCard
+                      movie={movie}
+                      key={movie.id}
+                      isFavorite={favoriteIds.includes(movie.id)}
+                      onToggleFavorite={toggleFavorite}
+                      favoriteLimitReached={favoriteIds.length >= MAX_FAVORITES}
+                    />
+                  ))}
                 </div>
               )}
             </div>
@@ -196,7 +286,43 @@ function App() {
         <div ref={endRef} />
       </section>
 
-      <footer className="composer-wrap">
+      {view === 'favorites' && (
+        <section className="favorites-panel" aria-label="Mes favoris">
+          <div className="favorites-intro">
+            <span className="eyebrow">MA SÉLECTION</span>
+            <h2>Mes <em>favoris.</em></h2>
+            <p>{favoriteIds.length} film{favoriteIds.length > 1 ? 's' : ''} enregistré{favoriteIds.length > 1 ? 's' : ''} dans cet onglet. La liste disparaît à la fin de la session.</p>
+          </div>
+          {storageError && <p className="error" role="alert">Le navigateur bloque le stockage de session : les favoris risquent de disparaître après actualisation.</p>}
+          {favoriteIds.length === 0 ? (
+            <div className="favorites-empty">
+              <p>Votre sélection est encore vide.</p>
+              <button type="button" onClick={() => setView('discover')}>Découvrir des films ↗</button>
+            </div>
+          ) : (
+            <>
+              {favoritesLoading && <p className="favorites-status" role="status">Chargement des fiches…</p>}
+              {favoritesError && <div className="favorites-status" role="alert">
+                <p>{favoritesError}</p>
+                <button type="button" onClick={showFavorites}>Réessayer</button>
+              </div>}
+              <div className="movie-list">
+                {favoriteIds.map((id) => favoriteMovies[id] && (
+                  <MovieCard
+                    movie={favoriteMovies[id]}
+                    key={id}
+                    isFavorite
+                    onToggleFavorite={toggleFavorite}
+                    favoriteLimitReached={false}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {view === 'discover' && <footer className="composer-wrap">
         {error && <p className="error" role="alert">{error}</p>}
         <form className="composer" onSubmit={submit}>
           <textarea
@@ -218,7 +344,7 @@ function App() {
           </button>
         </form>
         <div className="composer-note"><span>Entrée pour rechercher · Maj + Entrée pour une nouvelle ligne</span><span className={message.length > maxLength ? 'over-limit' : ''}>{message.length} / {maxLength}</span></div>
-      </footer>
+      </footer>}
     </main>
   )
 }
