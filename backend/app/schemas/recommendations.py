@@ -5,6 +5,7 @@ class RecommendationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1)
+    favorite_ids: list[PositiveInt] = Field(default_factory=list, max_length=20)
 
     @field_validator("message", mode="before")
     @classmethod
@@ -39,7 +40,7 @@ class MovieResult(BaseModel):
 
 class RecommendationResponse(BaseModel):
     message: str
-    movies: list[MovieResult] = Field(default_factory=list, max_length=5)
+    movies: list[MovieResult] = Field(default_factory=list, max_length=7)
 
 
 class MovieLookupRequest(BaseModel):

@@ -18,7 +18,7 @@ FastAPI
 
 Claude ne choisit jamais un film à partir de ses seules connaissances. Il produit un
 `MovieSearchIntent` Pydantic qui distingue les contraintes obligatoires des préférences. Le backend
-traduit ensuite cette intention en appels MCP vérifiables et ne retourne jamais plus de cinq films.
+traduit ensuite cette intention en appels MCP vérifiables et ne retourne jamais plus de sept films.
 
 Le MCP est conservé comme sous-processus `stdio` du backend. Il est démarré au premier appel qui en
 a besoin puis fermé avec FastAPI. Il n’expose pas de serveur HTTP séparé.
@@ -57,7 +57,7 @@ Puis renseigner `backend/.env`. Aucun secret ne doit être envoyé au frontend o
 | `TMDB_MCP_ARGS` | Tableau JSON des arguments, par défaut `["-y","tmdb-mcp@0.11.0"]`. |
 | `MCP_CALL_TIMEOUT_SECONDS` | Délai maximal d’un appel de tool MCP. |
 | `MAX_USER_MESSAGE_LENGTH` | Limite validée par FastAPI et affichée par React, par défaut `200`. |
-| `MAX_RECOMMENDATIONS` | Nombre maximal de films, limité à cinq. |
+| `MAX_RECOMMENDATIONS` | Nombre maximal de films, fixé à sept par défaut et limité à sept. |
 | `MOVIE_CANDIDATE_LIMIT` | Nombre maximal de candidats TMDB examinés, limité à vingt. |
 | `DEFAULT_MIN_VOTES` | Nombre minimal de votes TMDB pour une demande « bien notée ». |
 | `CORS_ORIGINS` | Origines frontend autorisées, séparées par des virgules. |
@@ -125,7 +125,9 @@ L’application est disponible sur <http://localhost:3000> et l’API sur
    puis le backend applique lui-même le filtre IMDb.
 7. `get_movie` et `get_movie_credits` fournissent les détails, l’affiche, le casting et le
    réalisateur. Les contraintes obligatoires vérifiables sont contrôlées une seconde fois.
-8. Au plus cinq films conformes sont renvoyés. Aucun résultat approximatif n’est ajouté.
+8. Si des favoris sont présents, `get_similar` donne la priorité aux candidats proches des dix
+   favoris les plus récents. Il n'ajoute aucun candidat et ne remplace aucun filtre obligatoire.
+9. Au plus sept films conformes sont renvoyés. Aucun résultat approximatif n’est ajouté.
 
 `discover_movies.min_rating` correspond exclusivement à la moyenne TMDB. Le code ne l’utilise
 jamais pour satisfaire une contrainte IMDb.
@@ -144,6 +146,11 @@ l'onglet « Favoris » récupère les fiches via `POST /api/movies/lookup` avec 
 `{"ids":[603,27205]}`. Le backend utilise le MCP TMDB existant pour reconstruire les fiches ;
 aucun compte ni stockage serveur n'est nécessaire.
 
+Chaque recherche envoie les identifiants des favoris de l'onglet à `POST /api/recommendations`.
+Le backend utilise uniquement les dix derniers pour limiter les appels MCP. La similarité
+réordonne les candidats déjà trouvés ; elle ne suffit jamais à faire apparaître un film qui ne
+correspond pas à la recherche.
+
 ## Tests et qualité
 
 ```powershell
@@ -157,7 +164,7 @@ npm run build
 ```
 
 Les tests n’effectuent aucun véritable appel Claude, TMDB, OMDb ou MCP. Les services externes sont
-simulés pour tester la validation, le garde-fou, le parsing, la limite de cinq films et le respect
+simulés pour tester la validation, le garde-fou, le parsing, la limite de sept films et le respect
 des contraintes obligatoires.
 
 ## Limites de cette V1

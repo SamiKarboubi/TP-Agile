@@ -80,7 +80,7 @@ class FakeMCP:
 
 
 @pytest.mark.asyncio
-async def test_returns_at_most_five_movies_and_rechecks_runtime() -> None:
+async def test_returns_at_most_seven_movies_and_rechecks_runtime() -> None:
     mcp = FakeMCP(runtimes={1: 130})
     service = MovieRecommendationService(Settings(), mcp)
     required = MovieConstraints(
@@ -89,7 +89,7 @@ async def test_returns_at_most_five_movies_and_rechecks_runtime() -> None:
 
     response = await service.recommend(intent(required))
 
-    assert len(response.movies) == 5
+    assert len(response.movies) == 6
     assert all(movie.id != 1 for movie in response.movies)
 
 
@@ -192,7 +192,7 @@ async def test_watch_options_use_requested_region_and_also_check_trailer() -> No
     assert response.movies[0].rent == ["Apple TV"]
     assert response.movies[0].trailer_url == "https://www.youtube.com/watch?v=official"
     assert all(args["region"] == "FR" for name, args in mcp.calls if name == "get_watch_providers")
-    assert len([name for name, _ in mcp.calls if name == "get_videos"]) == 5
+    assert len([name for name, _ in mcp.calls if name == "get_videos"]) == 7
 
 
 @pytest.mark.asyncio
@@ -222,7 +222,7 @@ async def test_optional_availability_failure_keeps_recommendations() -> None:
 
     response = await MovieRecommendationService(Settings(), UnavailableMCP()).recommend(intent())
 
-    assert len(response.movies) == 5
+    assert len(response.movies) == 7
     assert response.movies[0].streaming == []
     assert response.movies[0].trailer_url is None
 
@@ -240,3 +240,60 @@ async def test_lookup_movies_restores_full_cards_in_id_order() -> None:
     assert movies[0].watch_region == "FR"
     assert [args["id"] for name, args in mcp.calls if name == "get_movie"] == [3, 1]
     assert not any(name == "discover_movies" for name, _ in mcp.calls)
+
+
+@pytest.mark.asyncio
+async def test_favorite_similarity_only_prioritizes_filtered_candidates() -> None:
+    class SimilarMCP(FakeMCP):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if name == "get_similar":
+                self.calls.append((name, arguments))
+                return {"results": [{"id": 99}, {"id": 4}, {"id": 2}]}
+            return await super().call_tool(name, arguments)
+
+    mcp = SimilarMCP(runtimes={2: 130})
+    service = MovieRecommendationService(Settings(), mcp)
+    required = MovieConstraints(runtime_minutes=IntRange(maximum=120))
+
+    response = await service.recommend(intent(required), favorite_ids=[50])
+
+    assert [movie.id for movie in response.movies] == [4, 1, 3, 5, 6, 7]
+    assert [(name, args["id"]) for name, args in mcp.calls if name == "get_similar"] == [
+        ("get_similar", 50)
+    ]
+    assert not any(args["id"] == 99 for name, args in mcp.calls if name == "get_movie")
+
+
+@pytest.mark.asyncio
+async def test_favorite_similarity_failure_keeps_normal_recommendations() -> None:
+    class FailingSimilarMCP(FakeMCP):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if name == "get_similar":
+                raise MCPServiceError("upstream unavailable")
+            return await super().call_tool(name, arguments)
+
+    response = await MovieRecommendationService(Settings(), FailingSimilarMCP()).recommend(
+        intent(), favorite_ids=[50]
+    )
+
+    assert [movie.id for movie in response.movies] == list(range(1, 8))
+
+
+@pytest.mark.asyncio
+async def test_similarity_considers_ten_most_recent_favorites() -> None:
+    class SimilarMCP(FakeMCP):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if name == "get_similar":
+                self.calls.append((name, arguments))
+                return {"results": [{"id": 6 if arguments["id"] == 1 else 7}]}
+            return await super().call_tool(name, arguments)
+
+    mcp = SimilarMCP()
+    response = await MovieRecommendationService(Settings(), mcp).recommend(
+        intent(), favorite_ids=list(range(1, 12))
+    )
+
+    assert [args["id"] for name, args in mcp.calls if name == "get_similar"] == list(
+        range(2, 12)
+    )
+    assert response.movies[0].id == 7

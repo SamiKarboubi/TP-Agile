@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     mcp_call_timeout_seconds: float = Field(default=30, gt=0)
 
     max_user_message_length: int = Field(default=200, ge=50, le=1000)
-    max_recommendations: int = Field(default=5, ge=1, le=5)
+    max_recommendations: int = Field(default=7, ge=1, le=7)
     movie_candidate_limit: int = Field(default=20, ge=5, le=20)
     default_min_votes: int = Field(default=200, ge=0)
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
@@ -69,4 +69,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

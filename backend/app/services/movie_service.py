@@ -15,6 +15,9 @@ class MovieDataClient(Protocol):
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
 
+MAX_SIMILAR_FAVORITES = 10
+
+
 @dataclass
 class ResolvedEntities:
     genre_ids: dict[str, int] = field(default_factory=dict)
@@ -32,7 +35,9 @@ class MovieRecommendationService:
         self._settings = settings
         self._mcp = mcp
 
-    async def recommend(self, intent: MovieSearchIntent) -> RecommendationResponse:
+    async def recommend(
+        self, intent: MovieSearchIntent, favorite_ids: list[int] | None = None
+    ) -> RecommendationResponse:
         if _has_bounds(intent.required.imdb_rating) and not self._settings.omdb_api_key:
             raise ServiceConfigurationError(
                 "OMDB_API_KEY est nécessaire pour appliquer une contrainte IMDb."
@@ -70,6 +75,10 @@ class MovieRecommendationService:
                     reverse=True,
                 )
 
+        if favorite_ids:
+            similar_ids = await self._favorite_similar_ids(favorite_ids[-MAX_SIMILAR_FAVORITES:])
+            candidates.sort(key=lambda item: item["id"] in similar_ids, reverse=True)
+
         movies: list[MovieResult] = []
         for candidate in candidates:
             movie_id = int(candidate["id"])
@@ -90,6 +99,23 @@ class MovieRecommendationService:
             message=RESULTS_MESSAGE if movies else NO_EXACT_MATCH_MESSAGE,
             movies=movies,
         )
+
+    async def _favorite_similar_ids(self, favorite_ids: list[int]) -> set[int]:
+        similar_ids: set[int] = set()
+        for movie_id in favorite_ids:
+            try:
+                payload = await self._mcp.call_tool(
+                    "get_similar", {"media_type": "movie", "id": movie_id, "page": 1}
+                )
+            except MCPServiceError:
+                continue
+            results = payload.get("results", [])
+            if isinstance(results, list):
+                similar_ids.update(
+                    item["id"] for item in results
+                    if isinstance(item, dict) and isinstance(item.get("id"), int)
+                )
+        return similar_ids
 
     async def lookup_movies(self, ids: list[int]) -> list[MovieResult]:
         movies: list[MovieResult] = []
