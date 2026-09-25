@@ -18,5 +18,5 @@ Renseignez les clés dans `backend/.env` avant une recherche réelle. L'API expo
 Pour les tests :
 
 ```powershell
-pytest
+python -m pytest
 ```
