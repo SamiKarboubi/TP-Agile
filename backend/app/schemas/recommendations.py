@@ -28,6 +28,13 @@ class MovieResult(BaseModel):
     metacritic: str | None = None
     tmdb_url: str | None = None
     imdb_url: str | None = None
+    watch_region: str | None = None
+    streaming: list[str] = Field(default_factory=list)
+    free: list[str] = Field(default_factory=list)
+    ads: list[str] = Field(default_factory=list)
+    rent: list[str] = Field(default_factory=list)
+    buy: list[str] = Field(default_factory=list)
+    trailer_url: str | None = None
 
 
 class RecommendationResponse(BaseModel):
@@ -37,4 +44,3 @@ class RecommendationResponse(BaseModel):
 
 class PublicConfigResponse(BaseModel):
     max_user_message_length: int
-

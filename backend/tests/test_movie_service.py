@@ -5,6 +5,7 @@ import pytest
 from app.core.config import Settings
 from app.schemas.intents import IntRange, MovieConstraints, MovieSearchIntent
 from app.services.movie_service import MovieRecommendationService
+from app.services.errors import MCPServiceError
 
 
 def intent(required: MovieConstraints | None = None) -> MovieSearchIntent:
@@ -71,6 +72,10 @@ class FakeMCP:
         if name == "get_movie_credits":
             cast = [{"id": self.actor_id, "name": "Actor"}] if self.actor_id else []
             return {"cast": cast, "crew": [{"id": 20, "name": "Director", "job": "Director"}]}
+        if name == "get_watch_providers":
+            return {"available": False, "region": arguments["region"], "available_regions": []}
+        if name == "get_videos":
+            return {"results": []}
         raise AssertionError(f"Unexpected tool: {name}")
 
 
@@ -157,3 +162,66 @@ async def test_title_search_requires_exact_title() -> None:
     )
 
     assert response.movies == []
+
+
+@pytest.mark.asyncio
+async def test_watch_options_use_requested_region_and_also_check_trailer() -> None:
+    class ProviderMCP(FakeMCP):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if name == "get_watch_providers":
+                self.calls.append((name, arguments))
+                return {
+                    "available": True,
+                    "streaming": ["Netflix"],
+                    "free": [], "ads": [], "rent": ["Apple TV"], "buy": [],
+                }
+            if name == "get_videos":
+                self.calls.append((name, arguments))
+                return {"results": [{
+                    "type": "Trailer", "official": True,
+                    "url": "https://www.youtube.com/watch?v=official",
+                }]}
+            return await super().call_tool(name, arguments)
+
+    mcp = ProviderMCP()
+    response = await MovieRecommendationService(Settings(), mcp).recommend(
+        intent(MovieConstraints(watch_region="FR"))
+    )
+
+    assert response.movies[0].streaming == ["Netflix"]
+    assert response.movies[0].rent == ["Apple TV"]
+    assert response.movies[0].trailer_url == "https://www.youtube.com/watch?v=official"
+    assert all(args["region"] == "FR" for name, args in mcp.calls if name == "get_watch_providers")
+    assert len([name for name, _ in mcp.calls if name == "get_videos"]) == 5
+
+
+@pytest.mark.asyncio
+async def test_trailer_is_returned_when_no_watch_provider_is_known() -> None:
+    class TrailerMCP(FakeMCP):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if name == "get_videos":
+                self.calls.append((name, arguments))
+                return {"results": [
+                    {"type": "Trailer", "official": False, "url": "https://www.youtube.com/watch?v=first"},
+                    {"type": "Trailer", "official": True, "url": "https://www.youtube.com/watch?v=official"},
+                ]}
+            return await super().call_tool(name, arguments)
+
+    response = await MovieRecommendationService(Settings(), TrailerMCP()).recommend(intent())
+
+    assert response.movies[0].trailer_url == "https://www.youtube.com/watch?v=official"
+
+
+@pytest.mark.asyncio
+async def test_optional_availability_failure_keeps_recommendations() -> None:
+    class UnavailableMCP(FakeMCP):
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if name in {"get_watch_providers", "get_videos"}:
+                raise MCPServiceError("upstream unavailable")
+            return await super().call_tool(name, arguments)
+
+    response = await MovieRecommendationService(Settings(), UnavailableMCP()).recommend(intent())
+
+    assert len(response.movies) == 5
+    assert response.movies[0].streaming == []
+    assert response.movies[0].trailer_url is None

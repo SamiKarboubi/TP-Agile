@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import './App.css'
 
 const DEFAULT_MAX_LENGTH = 200
+const SUGGESTIONS = [
+  'Un thriller après 2010, très bien noté',
+  'Un film dans le style d’Interstellar',
+  'Une comédie française à voir ce soir',
+]
 
 function formatRuntime(minutes) {
   if (!minutes) return null
@@ -11,40 +16,64 @@ function formatRuntime(minutes) {
 }
 
 function MovieCard({ movie }) {
+  const offers = [
+    ['Abonnement', movie.streaming],
+    ['Gratuit', movie.free],
+    ['Avec publicité', movie.ads],
+    ['Location', movie.rent],
+    ['Achat', movie.buy],
+  ].filter(([, names]) => names?.length)
+  const poster = movie.poster_url ? (
+    <img className="poster" src={movie.poster_url} alt={`Affiche de ${movie.title}`} loading="lazy" />
+  ) : (
+    <div className="poster poster-placeholder" aria-label="Affiche indisponible">CINÉMA</div>
+  )
+
   return (
     <article className="movie-card">
-      {movie.poster_url ? (
-        <img className="poster" src={movie.poster_url} alt={`Affiche de ${movie.title}`} />
-      ) : (
-        <div className="poster poster-placeholder" aria-label="Affiche indisponible">
-          <span>🎬</span>
-          Affiche indisponible
-        </div>
-      )}
+      <div className="poster-frame">
+        {poster}
+      </div>
 
       <div className="movie-content">
+        <div className="movie-topline">
+          <span>SÉLECTION</span>
+          {movie.year && <span>{movie.year}</span>}
+        </div>
         <div className="movie-heading">
           <div>
             <h3>{movie.title}</h3>
             <p className="metadata">
-              {[movie.year, movie.genres?.slice(0, 2).join(' · '), formatRuntime(movie.runtime)]
-                .filter(Boolean)
-                .join(' · ')}
+              {[movie.genres?.slice(0, 2).join(' · '), formatRuntime(movie.runtime)].filter(Boolean).join(' · ')}
             </p>
           </div>
           <div className="ratings" aria-label="Notes du film">
-            {movie.imdb_rating != null && <span className="imdb">IMDb {movie.imdb_rating}</span>}
-            {movie.tmdb_rating != null && <span>TMDB {movie.tmdb_rating.toFixed(1)}</span>}
+            {movie.imdb_rating != null && <span>IMDb <strong>{movie.imdb_rating}</strong></span>}
+            {movie.tmdb_rating != null && <span>TMDB <strong>{movie.tmdb_rating.toFixed(1)}</strong></span>}
           </div>
         </div>
 
-        {movie.director && (
-          <p className="credit"><strong>Réalisation :</strong> {movie.director}</p>
-        )}
-        {movie.main_cast?.length > 0 && (
-          <p className="credit"><strong>Avec :</strong> {movie.main_cast.join(', ')}</p>
-        )}
+        {movie.director && <p className="credit"><strong>Réalisation</strong> {movie.director}</p>}
+        {movie.main_cast?.length > 0 && <p className="credit"><strong>Avec</strong> {movie.main_cast.join(', ')}</p>}
         {movie.overview && <p className="overview">{movie.overview}</p>}
+
+        <div className="availability">
+          <div className="availability-heading">
+            <span>OÙ VOIR CE FILM</span>
+            <span>{movie.watch_region || 'FR'}</span>
+          </div>
+          {offers.length ? (
+            <div className="offer-list">
+              {offers.map(([label, names]) => (
+                <p className="offer-row" key={label}><span>{label}</span><strong>{names.join(' · ')}</strong></p>
+              ))}
+            </div>
+          ) : <p className="availability-empty">Aucune plateforme renseignée pour ce pays.</p>}
+          <div className="movie-actions">
+            {movie.trailer_url && <a className="primary-link" href={movie.trailer_url} target="_blank" rel="noopener noreferrer">Voir la bande-annonce <span aria-hidden="true">↗</span></a>}
+          </div>
+          {offers.length > 0 && <small>Disponibilités : JustWatch via TMDB · Les offres peuvent évoluer.</small>}
+        </div>
       </div>
     </article>
   )
@@ -57,6 +86,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const endRef = useRef(null)
+  const textRef = useRef(null)
 
   useEffect(() => {
     fetch('/api/config')
@@ -98,7 +128,10 @@ function App() {
         { role: 'assistant', text: data.message, movies: data.movies ?? [] },
       ])
     } catch (requestError) {
-      setError(requestError.message || 'Le service est temporairement indisponible.')
+      setConversation((items) => [...items, {
+        role: 'assistant',
+        text: requestError.message || 'Le service est temporairement indisponible.',
+      }])
     } finally {
       setLoading(false)
     }
@@ -114,25 +147,35 @@ function App() {
   return (
     <main className="app-shell">
       <header className="app-header">
-        <div className="brand-mark" aria-hidden="true">M</div>
-        <div>
-          <h1>Movie Recommendation</h1>
-          <p>Décrivez le film que vous avez envie de voir.</p>
+        <div className="brand-mark" aria-hidden="true">M<span>.</span></div>
+        <div className="brand-copy">
+          <h1>MovieMatch</h1>
+          <p>LE BON FILM, AU BON MOMENT</p>
         </div>
+        <span className="header-edition">VOTRE SÉLECTION CINÉMA</span>
       </header>
 
-      <section className="conversation" aria-live="polite">
+      <section className="conversation" aria-live="polite" aria-label="Conversation">
         {conversation.length === 0 && (
           <div className="welcome">
-            <span aria-hidden="true">✦</span>
-            <h2>Une envie de cinéma ?</h2>
-            <p>Essayez « Un thriller après 2010 avec une note IMDb supérieure à 7.5 ».</p>
+            <span className="eyebrow">LE FILM DE CE SOIR COMMENCE ICI</span>
+            <h2>Qu’est-ce qu’on <em>regarde ?</em></h2>
+            <p>Une ambiance, un acteur, une envie précise : racontez-nous ce que vous cherchez.</p>
+            <div className="suggestions" aria-label="Idées de recherche">
+              {SUGGESTIONS.map((suggestion) => (
+                <button key={suggestion} type="button" onClick={() => {
+                  setMessage(suggestion)
+                  textRef.current?.focus()
+                }}>{suggestion} <span aria-hidden="true">↗</span></button>
+              ))}
+            </div>
+            <div className="welcome-line"><span>01 / DÉCRIVEZ</span><span>02 / DÉCOUVREZ</span><span>03 / REGARDEZ</span></div>
           </div>
         )}
 
         {conversation.map((item, index) => (
           <div className={`message ${item.role}`} key={`${item.role}-${index}`}>
-            <div className="message-label">{item.role === 'user' ? 'Vous' : 'Assistant'}</div>
+            <div className="message-label">{item.role === 'user' ? 'VOUS' : 'MOVIEMATCH'}</div>
             <div className="message-body">
               <p>{item.text}</p>
               {item.movies?.length > 0 && (
@@ -146,8 +189,8 @@ function App() {
 
         {loading && (
           <div className="message assistant">
-            <div className="message-label">Assistant</div>
-            <div className="message-body loading"><span /><span /><span /></div>
+            <div className="message-label">MOVIEMATCH</div>
+            <div className="message-body loading" role="status" aria-label="Recherche en cours"><span /><span /><span /></div>
           </div>
         )}
         <div ref={endRef} />
@@ -157,8 +200,9 @@ function App() {
         {error && <p className="error" role="alert">{error}</p>}
         <form className="composer" onSubmit={submit}>
           <textarea
+            ref={textRef}
             aria-label="Votre recherche de film"
-            placeholder="Écrivez votre recherche…"
+            placeholder="Décrivez le film que vous avez envie de voir…"
             value={message}
             onChange={(event) => {
               setMessage(event.target.value)
@@ -169,14 +213,11 @@ function App() {
             maxLength={maxLength + 1}
             disabled={loading}
           />
-          <button type="submit" disabled={loading || !message.trim() || message.length > maxLength}>
-            <span className="sr-only">Envoyer</span>
-            <span aria-hidden="true">➤</span>
+          <button type="submit" disabled={loading || !message.trim() || message.trim().length > maxLength}>
+            <span>Rechercher</span><span aria-hidden="true">↗</span>
           </button>
         </form>
-        <div className={`counter ${message.length > maxLength ? 'over-limit' : ''}`}>
-          {message.length} / {maxLength}
-        </div>
+        <div className="composer-note"><span>Entrée pour rechercher · Maj + Entrée pour une nouvelle ligne</span><span className={message.length > maxLength ? 'over-limit' : ''}>{message.length} / {maxLength}</span></div>
       </footer>
     </main>
   )

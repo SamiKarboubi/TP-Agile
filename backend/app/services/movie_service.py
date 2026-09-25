@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Protocol
 import unicodedata
+from urllib.parse import urlparse
 
 from app.core.config import Settings
 from app.core.constants import NO_EXACT_MATCH_MESSAGE, RESULTS_MESSAGE
@@ -87,6 +88,38 @@ class MovieRecommendationService:
                 movies.append(movie)
             if len(movies) >= self._settings.max_recommendations:
                 break
+
+        watch_region = (
+            intent.required.watch_region
+            or intent.preferred.watch_region
+            or self._settings.tmdb_region
+        ).strip().upper()
+        for movie in movies:
+            try:
+                providers = await self._mcp.call_tool(
+                    "get_watch_providers",
+                    {"media_type": "movie", "id": movie.id, "region": watch_region},
+                )
+            except MCPServiceError:
+                providers = {}
+            movie.watch_region = watch_region
+            if providers.get("available") is True:
+                for category in ("streaming", "free", "ads", "rent", "buy"):
+                    names = providers.get(category)
+                    if isinstance(names, list):
+                        setattr(
+                            movie,
+                            category,
+                            [name for name in names if isinstance(name, str) and name.strip()],
+                        )
+
+            try:
+                videos = await self._mcp.call_tool(
+                    "get_videos", {"media_type": "movie", "id": movie.id}
+                )
+            except MCPServiceError:
+                videos = {}
+            movie.trailer_url = _trailer_url(videos)
 
         return RecommendationResponse(
             message=RESULTS_MESSAGE if movies else NO_EXACT_MATCH_MESSAGE,
@@ -402,6 +435,26 @@ def _to_movie_result(
         tmdb_url=detail.get("tmdb_url"),
         imdb_url=detail.get("imdb_url"),
     )
+
+
+def _trusted_url(value: Any, hostname: str) -> str | None:
+    if not isinstance(value, str):
+        return None
+    parsed = urlparse(value)
+    return value if parsed.scheme == "https" and parsed.hostname == hostname else None
+
+
+def _trailer_url(payload: dict[str, Any]) -> str | None:
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return None
+    trailers = [
+        item for item in results
+        if isinstance(item, dict) and item.get("type") == "Trailer"
+        and _trusted_url(item.get("url"), "www.youtube.com")
+    ]
+    trailers.sort(key=lambda item: item.get("official") is True, reverse=True)
+    return _trusted_url(trailers[0]["url"], "www.youtube.com") if trailers else None
 
 
 def _deduplicate(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
