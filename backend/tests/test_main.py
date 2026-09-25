@@ -4,7 +4,7 @@ from app.core.config import Settings
 from app.core.constants import OUT_OF_SCOPE_MESSAGE
 from app.main import create_app
 from app.schemas.intents import MovieConstraints, MovieSearchIntent
-from app.schemas.recommendations import RecommendationResponse
+from app.schemas.recommendations import MovieResult, RecommendationResponse
 
 
 class FakeAnalyzer:
@@ -25,6 +25,11 @@ class FakeAnalyzer:
 class FakeRecommender:
     def __init__(self) -> None:
         self.calls = 0
+        self.lookup_ids: list[int] = []
+
+    async def lookup_movies(self, ids: list[int]) -> list[MovieResult]:
+        self.lookup_ids = ids
+        return [MovieResult(id=movie_id, title=f"Film {movie_id}") for movie_id in ids]
 
     async def recommend(self, _: MovieSearchIntent) -> RecommendationResponse:
         self.calls += 1
@@ -75,3 +80,22 @@ def test_out_of_scope_request_uses_fixed_response_without_movie_calls() -> None:
     assert response.status_code == 200
     assert response.json() == {"message": OUT_OF_SCOPE_MESSAGE, "movies": []}
     assert recommender.calls == 0
+
+
+def test_movie_lookup_returns_details_without_analyzing_message() -> None:
+    client, analyzer, recommender = make_client()
+
+    response = client.post("/api/movies/lookup", json={"ids": [7, 3, 7]})
+
+    assert response.status_code == 200
+    assert [movie["id"] for movie in response.json()["movies"]] == [7, 3]
+    assert recommender.lookup_ids == [7, 3]
+    assert analyzer.calls == []
+
+
+def test_movie_lookup_rejects_invalid_or_excessive_ids() -> None:
+    client, _, recommender = make_client()
+
+    assert client.post("/api/movies/lookup", json={"ids": [0]}).status_code == 422
+    assert client.post("/api/movies/lookup", json={"ids": list(range(1, 22))}).status_code == 422
+    assert recommender.lookup_ids == []

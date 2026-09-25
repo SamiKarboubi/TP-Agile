@@ -225,3 +225,18 @@ async def test_optional_availability_failure_keeps_recommendations() -> None:
     assert len(response.movies) == 5
     assert response.movies[0].streaming == []
     assert response.movies[0].trailer_url is None
+
+
+@pytest.mark.asyncio
+async def test_lookup_movies_restores_full_cards_in_id_order() -> None:
+    mcp = FakeMCP()
+    service = MovieRecommendationService(Settings(tmdb_region="FR"), mcp)
+
+    movies = await service.lookup_movies([3, 1])
+
+    assert [movie.id for movie in movies] == [3, 1]
+    assert movies[0].title == "Film 3"
+    assert movies[0].director == "Director"
+    assert movies[0].watch_region == "FR"
+    assert [args["id"] for name, args in mcp.calls if name == "get_movie"] == [3, 1]
+    assert not any(name == "discover_movies" for name, _ in mcp.calls)

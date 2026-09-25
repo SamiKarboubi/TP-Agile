@@ -136,6 +136,14 @@ jamais pour satisfaire une contrainte IMDb.
 - `Un film avec Christian Bale de moins de 2 heures.`
 - `Je veux quelque chose dans le style d’Interstellar.`
 
+## Favoris de session
+
+Le bouton cœur ajoute ou retire un film des favoris. Le navigateur conserve uniquement ses
+identifiants TMDB dans `sessionStorage` (au plus 20 films par onglet). Après une actualisation,
+l'onglet « Favoris » récupère les fiches via `POST /api/movies/lookup` avec un corps
+`{"ids":[603,27205]}`. Le backend utilise le MCP TMDB existant pour reconstruire les fiches ;
+aucun compte ni stockage serveur n'est nécessaire.
+
 ## Tests et qualité
 
 ```powershell

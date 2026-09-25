@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 
 class RecommendationRequest(BaseModel):
@@ -40,6 +40,16 @@ class MovieResult(BaseModel):
 class RecommendationResponse(BaseModel):
     message: str
     movies: list[MovieResult] = Field(default_factory=list, max_length=5)
+
+
+class MovieLookupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[PositiveInt] = Field(max_length=20)
+
+
+class MovieLookupResponse(BaseModel):
+    movies: list[MovieResult] = Field(default_factory=list, max_length=20)
 
 
 class PublicConfigResponse(BaseModel):

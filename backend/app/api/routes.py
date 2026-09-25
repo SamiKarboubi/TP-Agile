@@ -6,6 +6,9 @@ from app.core.config import Settings
 from app.core.constants import OUT_OF_SCOPE_MESSAGE
 from app.schemas.intents import MovieSearchIntent
 from app.schemas.recommendations import (
+    MovieLookupRequest,
+    MovieLookupResponse,
+    MovieResult,
     PublicConfigResponse,
     RecommendationRequest,
     RecommendationResponse,
@@ -18,6 +21,8 @@ class IntentAnalyzer(Protocol):
 
 class Recommender(Protocol):
     async def recommend(self, intent: MovieSearchIntent) -> RecommendationResponse: ...
+
+    async def lookup_movies(self, ids: list[int]) -> list[MovieResult]: ...
 
 
 def build_router(
@@ -46,5 +51,10 @@ def build_router(
         if not intent.is_movie_request:
             return RecommendationResponse(message=OUT_OF_SCOPE_MESSAGE, movies=[])
         return await recommender.recommend(intent)
+
+    @router.post("/movies/lookup", response_model=MovieLookupResponse)
+    async def lookup_movies(request: MovieLookupRequest) -> MovieLookupResponse:
+        movies = await recommender.lookup_movies(list(dict.fromkeys(request.ids)))
+        return MovieLookupResponse(movies=movies)
 
     return router
