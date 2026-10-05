@@ -66,6 +66,8 @@ def build_account_router(settings: Settings, auth: AuthService) -> APIRouter:
                  dependencies=[Depends(protected_action), Depends(limit_auth)])
     async def login(body: LoginRequest, request: Request, response: Response) -> AccountResponse:
         user = await auth.login(body.username, body.password)
+        # Import only after credentials have been verified; the store locks the user.
+        await asyncio.to_thread(auth.store.merge_favorites, user.id, body.favorite_ids)
         await asyncio.to_thread(open_session, request, response, user)
         return await asyncio.to_thread(account_response, user)
 

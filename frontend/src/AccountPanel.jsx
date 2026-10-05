@@ -1,7 +1,7 @@
 import { useState } from 'react'
+import { passwordRules } from './passwordRules'
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_.\-]{3,32}$/v
-const PASSWORD_PATTERN = /^(?=.*\p{Lu})(?=.*[0-9])(?=.*[^\p{L}\p{N}\s]).{8,128}$/u
 
 export default function AccountPanel({ account, onDone }) {
   const [mode, setMode] = useState('login')
@@ -9,11 +9,12 @@ export default function AccountPanel({ account, onDone }) {
   const [password, setPassword] = useState('')
   const [passwordConfirmation, setPasswordConfirmation] = useState('')
   const signup = mode === 'signup'
+  const rules = passwordRules(password)
   const confirmationMismatch = signup && passwordConfirmation !== ''
     && passwordConfirmation !== password
   const canSubmit = account.ready && !account.busy
     && (signup
-      ? USERNAME_PATTERN.test(username) && PASSWORD_PATTERN.test(password)
+      ? USERNAME_PATTERN.test(username) && rules.every((rule) => rule.valid)
         && passwordConfirmation === password
       : username.trim() !== '' && password !== '')
 
@@ -42,7 +43,7 @@ export default function AccountPanel({ account, onDone }) {
             <button type="button" aria-pressed={!signup} disabled={account.busy} onClick={() => { setMode('login'); setPassword(''); setPasswordConfirmation('') }}>Connexion</button>
             <button type="button" aria-pressed={signup} disabled={account.busy} onClick={() => { setMode('signup'); setPassword(''); setPasswordConfirmation('') }}>Créer un compte</button>
           </div>
-          <p>{signup ? 'Les favoris de cet onglet seront ajoutés à votre nouveau compte.' : 'Retrouvez votre sélection en vous connectant.'}</p>
+          <p>Les favoris de cet onglet seront ajoutés à votre compte {signup ? 'à sa création' : 'à la connexion'}.</p>
           <form className="account-form" onSubmit={submit}>
             <label htmlFor="username">Nom d’utilisateur</label>
             <input id="username" name="username" autoComplete="username" value={username}
@@ -53,11 +54,15 @@ export default function AccountPanel({ account, onDone }) {
             <input id="password" name="password" type="password" autoComplete={signup ? 'new-password' : 'current-password'}
               value={password} onChange={(event) => setPassword(event.target.value)} required
               minLength={signup ? 8 : undefined} maxLength={128}
-              pattern={signup ? PASSWORD_PATTERN.source : undefined}
-              title={signup ? 'Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial.' : undefined}
+              aria-invalid={signup && password !== '' && !rules.every((rule) => rule.valid)}
               aria-describedby={signup ? 'password-help' : undefined}
               disabled={account.busy || !account.ready} />
-            {signup && <small id="password-help">Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial (ex. !, @, #). Un espace ne compte pas comme caractère spécial.</small>}
+            {signup && <ul id="password-help" className="password-rules" aria-live="polite">
+              {rules.map((rule, index) => <li key={index}
+                className={password ? rule.valid ? 'rule-valid' : 'rule-missing' : undefined}>
+                <span aria-hidden="true">{password && rule.valid ? '✓' : '○'}</span> {rule.message}
+              </li>)}
+            </ul>}
             {signup && <>
               <label htmlFor="password-confirmation">Confirmer le mot de passe</label>
               <input id="password-confirmation" name="password-confirmation" type="password"

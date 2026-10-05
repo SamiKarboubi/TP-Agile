@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from psycopg import OperationalError
 
 from app.api.routes import build_router
@@ -19,6 +20,7 @@ from app.services.movie_service import MovieRecommendationService
 from app.services.account_store import AccountStore
 from app.services.auth_service import AuthService
 from app.services.postgres_account_store import PostgresAccountStore
+from app.services.genre_catalog import GenreCatalog
 
 
 logger = logging.getLogger(__name__)
@@ -35,11 +37,13 @@ def create_app(
     store = account_store if account_store is not None else PostgresAccountStore(app_settings)
     auth = AuthService(app_settings, store)
 
-    if analyzer is None:
-        analyzer = ClaudeService(app_settings)
-    if recommender is None:
+    if analyzer is None or recommender is None:
         mcp_service = MCPService(app_settings)
-        recommender = MovieRecommendationService(app_settings, mcp_service)
+        genres = GenreCatalog(mcp_service)
+        if analyzer is None:
+            analyzer = ClaudeService(app_settings, genres)
+        if recommender is None:
+            recommender = MovieRecommendationService(app_settings, mcp_service, genres)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -77,6 +81,13 @@ def create_app(
     async def database_error_handler(_: Request, exc: OperationalError) -> JSONResponse:
         logger.warning("Database unavailable: %s", exc.__class__.__name__)
         return JSONResponse(status_code=503, content={"detail": "La base de données est temporairement indisponible."})
+
+    @application.exception_handler(RequestValidationError)
+    async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # Do not echo passwords or other submitted values in validation responses.
+        details = [{"loc": error["loc"], "msg": error["msg"], "type": error["type"]}
+                   for error in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": details})
 
     @application.exception_handler(ApplicationServiceError)
     async def service_error_handler(

@@ -125,6 +125,44 @@ def test_login_rotates_token_and_logout_revokes_it(setup_account):
     assert client.get("/api/favorites").status_code == 401
 
 
+def test_login_merges_favorites_without_duplicates_and_only_after_valid_password(setup_account):
+    client, store, _ = setup_account
+    signup(client, ids=[1, 2])
+    body = {"username": "alice", "password": "wrong", "favorite_ids": [2, 3, 3]}
+    assert client.post("/api/auth/login", headers=HEADERS, json=body).status_code == 401
+    assert store.favorite_ids(store.find_user("alice").id) == [1, 2]
+    body["password"] = PASSWORD
+    for _ in range(2):
+        response = client.post("/api/auth/login", headers=HEADERS, json=body)
+        assert response.status_code == 200
+        assert response.json()["favorite_ids"] == [1, 2, 3]
+
+
+def test_login_import_respects_capacity_and_keeps_existing_order(setup_account):
+    client, _, _ = setup_account
+    signup(client, ids=list(range(1, 20)))
+    response = client.post("/api/auth/login", headers=HEADERS, json={
+        "username": "alice", "password": PASSWORD, "favorite_ids": [19, 20, 21, 20],
+    })
+    assert response.status_code == 200
+    assert response.json()["favorite_ids"] == list(range(1, 21))
+
+
+@pytest.mark.parametrize("password, missing", [
+    ("A1!abc", ["8 caractères"]), ("abcdef1!", ["majuscule"]),
+    ("Abcdefg!", ["chiffre"]), ("Abcdef12", ["caractère spécial"]),
+    ("abc", ["8 caractères", "majuscule", "chiffre", "caractère spécial"]),
+])
+def test_password_error_is_specific_and_never_echoes_submitted_password(setup_account, password, missing):
+    client, _, _ = setup_account
+    response = client.post("/api/auth/signup", headers=HEADERS, json={"username": "alice", "password": password})
+    assert response.status_code == 422
+    errors = response.json()["detail"]
+    messages = " ".join(error["msg"] for error in errors)
+    assert all(part in messages for part in missing)
+    assert all("input" not in error and "ctx" not in error for error in errors)
+
+
 def test_login_errors_are_generic_and_do_not_replace_valid_session(setup_account):
     client, _, _ = setup_account
     signup(client)

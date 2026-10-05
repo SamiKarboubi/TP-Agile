@@ -33,6 +33,9 @@ class FakeRecommender:
         self.lookup_ids = ids
         return [MovieResult(id=movie_id, title=f"Film {movie_id}") for movie_id in ids]
 
+    async def random_movies(self) -> list[MovieResult]:
+        return [MovieResult(id=movie_id, title=f"Film {movie_id}") for movie_id in range(1, 6)]
+
     async def recommend(
         self, _: MovieSearchIntent, favorite_ids: list[int] | None = None
     ) -> RecommendationResponse:
@@ -54,6 +57,15 @@ def test_health_check() -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_random_movies_are_available_without_authentication_or_claude() -> None:
+    client, analyzer, _ = make_client()
+    response = client.get("/api/movies/random")
+    assert response.status_code == 200
+    assert len({movie["id"] for movie in response.json()["movies"]}) == 5
+    assert response.headers["cache-control"] == "no-store"
+    assert analyzer.calls == []
 
 
 def test_empty_message_is_rejected() -> None:

@@ -80,6 +80,51 @@ class FakeMCP:
 
 
 @pytest.mark.asyncio
+async def test_random_selection_contains_five_distinct_movies_without_expensive_enrichment():
+    class WelcomeMCP(FakeMCP):
+        async def call_tool(self, name, arguments):
+            self.calls.append((name, arguments))
+            assert name == "discover_movies"
+            assert arguments["include_adult"] is False
+            assert 1 <= arguments["page"] <= 5
+            assert arguments["min_votes"] == 200
+            return {"results": [detail(movie_id) for movie_id in range(1, 15)] + [detail(1)]}
+
+    mcp = WelcomeMCP()
+    service = MovieRecommendationService(Settings(), mcp)
+    selections = [await service.random_movies() for _ in range(4)]
+    assert all(len({movie.id for movie in movies}) == 5 for movies in selections)
+    assert all(movie.title and movie.overview for movies in selections for movie in movies)
+    assert len(mcp.calls) == 4
+
+
+@pytest.mark.asyncio
+async def test_random_selection_can_report_an_unavailable_catalog():
+    mcp = FakeMCP()  # These simulated discover results have no movie titles.
+    with pytest.raises(MCPServiceError):
+        await MovieRecommendationService(Settings(), mcp).random_movies()
+
+
+@pytest.mark.asyncio
+async def test_catalog_genres_map_to_mcp_ids_and_required_genres_are_rechecked():
+    class CatalogMCP(FakeMCP):
+        async def call_tool(self, name, arguments):
+            if name == "get_movie_genres":
+                self.calls.append((name, arguments))
+                return {"genres": [{"id": 53, "name": "Thriller"}, {"id": 27, "name": "Horreur"}]}
+            return await super().call_tool(name, arguments)
+
+    mcp = CatalogMCP()
+    service = MovieRecommendationService(Settings(), mcp)
+    required = MovieConstraints(genres=["Thriller", "Horreur"])
+    assert (await service.recommend(intent(required))).movies == []
+    assert (await service.recommend(intent(required))).movies == []
+    assert sum(name == "get_movie_genres" for name, _ in mcp.calls) == 1
+    discover = next(arguments for name, arguments in mcp.calls if name == "discover_movies")
+    assert discover["with_genres"] == "53,27"
+
+
+@pytest.mark.asyncio
 async def test_returns_at_most_seven_movies_and_rechecks_runtime() -> None:
     mcp = FakeMCP(runtimes={1: 130})
     service = MovieRecommendationService(Settings(), mcp)

@@ -106,6 +106,25 @@ def test_login_wrong_short_password_and_favorite_isolation(store):
         assert client.get("/api/favorites").json()["ids"] == [3]
 
 
+def test_login_import_persists_and_does_not_merge_failed_login(store):
+    with TestClient(app_for(store)) as client:
+        signup(client, ids=[1, 2])
+        body = {"username": "alice", "password": "wrong", "favorite_ids": [2, 3, 3]}
+        assert client.post("/api/auth/login", headers=HEADERS, json=body).status_code == 401
+        assert client.get("/api/favorites").json()["ids"] == [1, 2]
+        body["password"] = PASSWORD
+        assert client.post("/api/auth/login", headers=HEADERS, json=body).json()["favorite_ids"] == [1, 2, 3]
+    with TestClient(app_for(type(store)(store._settings))) as client:
+        assert client.post("/api/auth/login", headers=HEADERS, json=body).json()["favorite_ids"] == [1, 2, 3]
+
+
+def test_concurrent_imports_respect_limit_and_do_not_duplicate(store):
+    user = store.create_user("alice", "test-hash", list(range(1, 19)))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda _: store.merge_favorites(user.id, [18, 19, 20, 21, 19]), range(4)))
+    assert store.favorite_ids(user.id) == list(range(1, 21))
+
+
 def test_signup_import_rolls_back_on_invalid_favorite(store):
     with pytest.raises(IntegrityError):
         store.create_user("alice", "hash", [1, 0])
