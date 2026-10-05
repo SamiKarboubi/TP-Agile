@@ -153,6 +153,11 @@ contradictoires. En cas de session expirée, le frontend vérifie à nouveau le 
 `AccountPanel.jsx` contient les formulaires d'inscription et de connexion et le bouton de
 déconnexion. Le champ mot de passe est vidé après l'envoi. Les formulaires disposent de labels,
 des attributs autocomplete appropriés et des contraintes cohérentes avec le backend.
+Les boutons « Se connecter » et « Créer mon compte » sont désactivés tant que le username
+ou le mot de passe ne respecte pas les règles. La soumission vérifie aussi ces conditions.
+À l'inscription, le champ « Confirmer le mot de passe » doit correspondre exactement au
+premier champ pour activer le bouton. Cette confirmation reste dans le formulaire et n'est
+pas envoyée au backend. Les deux champs sont vidés après l'envoi ou un changement de mode.
 
 `App.jsx` affiche les vues Découvrir, Favoris et Mon compte. Le composant de contenu est
 recréé lorsqu'on change de compte : cela efface la conversation et le cache des fiches du
