@@ -1,3 +1,4 @@
+import asyncio
 from typing import Protocol
 
 from fastapi import APIRouter, HTTPException, Request
@@ -52,14 +53,14 @@ def build_router(
                 ),
             )
 
-        user = auth.current_user(http_request.cookies.get(SESSION_COOKIE))
+        user = await asyncio.to_thread(auth.current_user, http_request.cookies.get(SESSION_COOKIE))
         expected = http_request.headers.get("X-MovieMatch-User")
         if expected is not None and (user is None or expected != user.id):
             raise HTTPException(401, "Votre session a expiré ou le compte connecté a changé.")
         intent = await analyzer.analyze(request.message)
         if not intent.is_movie_request:
             return RecommendationResponse(message=OUT_OF_SCOPE_MESSAGE, movies=[])
-        favorite_ids = auth.store.favorite_ids(user.id) if user else list(dict.fromkeys(request.favorite_ids))
+        favorite_ids = await asyncio.to_thread(auth.store.favorite_ids, user.id) if user else list(dict.fromkeys(request.favorite_ids))
         return await recommender.recommend(intent, favorite_ids)
 
     @router.post("/movies/lookup", response_model=MovieLookupResponse)

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
@@ -17,7 +18,7 @@ class LoginRequest(BaseModel):
 
 class SignupRequest(LoginRequest):
     password: str = Field(min_length=8, max_length=128)
-    favorite_ids: list[PositiveInt] = Field(default_factory=list, max_length=20)
+    favorite_ids: list[Annotated[PositiveInt, Field(le=9223372036854775807)]] = Field(default_factory=list, max_length=20)
 
     @field_validator("password")
     @classmethod

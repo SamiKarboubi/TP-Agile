@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import RLock
+from typing import Protocol
 from uuid import uuid4
 
 
@@ -18,8 +19,21 @@ class Session:
     expires_at: datetime
 
 
+class AccountStore(Protocol):
+    def initialize(self) -> None: ...
+    def check_health(self) -> None: ...
+    def find_user(self, username: str) -> User | None: ...
+    def create_user(self, username: str, password_hash: str, favorite_ids: list[int]) -> User: ...
+    def create_session(self, token_hash: str, user_id: str, expires_at: datetime) -> None: ...
+    def session_user(self, token_hash: str) -> User | None: ...
+    def delete_session(self, token_hash: str) -> None: ...
+    def favorite_ids(self, user_id: str) -> list[int]: ...
+    def add_favorite(self, user_id: str, movie_id: int) -> list[int]: ...
+    def remove_favorite(self, user_id: str, movie_id: int) -> list[int]: ...
+
+
 class InMemoryAccountStore:
-    """One app instance owns these dictionaries; restarting it clears them."""
+    """Isolated storage for unit tests only; the application uses PostgreSQL."""
 
     def __init__(self) -> None:
         self._users: dict[str, User] = {}
@@ -27,6 +41,12 @@ class InMemoryAccountStore:
         self._sessions: dict[str, Session] = {}
         self._favorites: dict[str, list[int]] = {}
         self._lock = RLock()
+
+    def initialize(self) -> None:
+        pass
+
+    def check_health(self) -> None:
+        pass
 
     def find_user(self, username: str) -> User | None:
         with self._lock:

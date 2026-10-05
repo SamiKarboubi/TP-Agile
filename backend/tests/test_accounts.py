@@ -72,6 +72,7 @@ def test_username_is_unique_without_case_and_failed_signup_keeps_account(setup_a
     {"username": "nom avec espaces", "password": PASSWORD},
     {"username": "alice", "password": "short"},
     {"username": "alice", "password": PASSWORD, "favorite_ids": [0]},
+    {"username": "alice", "password": PASSWORD, "favorite_ids": [2**63]},
     {"username": "alice", "password": PASSWORD, "favorite_ids": list(range(1, 22))},
     {"username": "alice", "password": PASSWORD, "user_id": "someone-else"},
 ])
@@ -163,6 +164,7 @@ def test_favorite_limit_and_missing_auth_are_enforced(setup_account):
     assert client.put("/api/favorites/21", headers=HEADERS).status_code == 409
     assert client.put("/api/favorites/20", headers=HEADERS).status_code == 200
     assert client.put("/api/favorites/0", headers=HEADERS).status_code == 422
+    assert client.put(f"/api/favorites/{2**63}", headers=HEADERS).status_code == 422
 
 
 def test_csrf_protection_on_auth_and_favorite_mutations(setup_account):
@@ -215,7 +217,7 @@ def test_login_attempts_are_limited(setup_account):
 
 def test_secure_cookie_over_https_and_fresh_store_after_restart():
     settings = Settings(auth_cookie_secure=True)
-    app = create_app(settings, FakeAnalyzer(), FakeRecommender())
+    app = create_app(settings, FakeAnalyzer(), FakeRecommender(), InMemoryAccountStore())
     client = TestClient(app, base_url="https://testserver")
     response = client.post("/api/auth/signup", headers={
         "X-MovieMatch-Request": "1", "Origin": "https://testserver",
@@ -223,7 +225,7 @@ def test_secure_cookie_over_https_and_fresh_store_after_restart():
     assert response.status_code == 201
     assert "secure" in response.headers["set-cookie"].lower()
     assert client.get("/api/auth/me").json()["user"]["username"] == "alice"
-    restarted = TestClient(create_app(settings, FakeAnalyzer(), FakeRecommender()), base_url="https://testserver")
+    restarted = TestClient(create_app(settings, FakeAnalyzer(), FakeRecommender(), InMemoryAccountStore()), base_url="https://testserver")
     restarted.cookies.update(client.cookies)
     assert restarted.get("/api/auth/me").json()["user"] is None
 

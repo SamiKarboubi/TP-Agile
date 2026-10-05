@@ -11,11 +11,11 @@ from argon2.exceptions import VerificationError
 from fastapi import HTTPException
 
 from app.core.config import Settings
-from app.services.account_store import InMemoryAccountStore, User
+from app.services.account_store import AccountStore, User
 
 
 class AuthService:
-    def __init__(self, settings: Settings, store: InMemoryAccountStore) -> None:
+    def __init__(self, settings: Settings, store: AccountStore) -> None:
         self.store = store
         self._settings = settings
         self._hasher = PasswordHasher()
@@ -41,12 +41,12 @@ class AuthService:
     async def signup(self, username: str, password: str, favorite_ids: list[int]) -> User:
         password_hash = await asyncio.to_thread(self._hasher.hash, password)
         try:
-            return self.store.create_user(username, password_hash, favorite_ids)
+            return await asyncio.to_thread(self.store.create_user, username, password_hash, favorite_ids)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 
     async def login(self, username: str, password: str) -> User:
-        user = self.store.find_user(username)
+        user = await asyncio.to_thread(self.store.find_user, username)
         try:
             await asyncio.to_thread(
                 self._hasher.verify, user.password_hash if user else self._dummy_hash, password

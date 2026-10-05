@@ -1,3 +1,4 @@
+# Standalone: only this file and backend/.env are needed, no application sources.
 services:
   db:
     image: postgres:17
@@ -17,8 +18,7 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ./backend
+    image: ghcr.io/${GHCR_REPOSITORY:-samikarboubi/tp-agile}/backend:${IMAGE_TAG:-latest}
     env_file:
       - ./backend/.env
     environment:
@@ -27,7 +27,6 @@ services:
       DB_NAME: ${DB_NAME:-moviematch}
       DB_USER: ${DB_USER:-moviematch_app}
       DB_PASSWORD: ${DB_PASSWORD:?Renseignez DB_PASSWORD dans backend/.env}
-      # The image contains the MCP executable, but not npx.
       TMDB_MCP_COMMAND: tmdb-mcp
       TMDB_MCP_ARGS: "[]"
     ports:
@@ -44,8 +43,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
+    image: ghcr.io/${GHCR_REPOSITORY:-samikarboubi/tp-agile}/frontend:${IMAGE_TAG:-latest}
     ports:
       - "127.0.0.1:3000:80"
     depends_on:

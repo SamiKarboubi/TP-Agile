@@ -1,8 +1,8 @@
-# Comptes et favoris MovieMatch : version en mémoire
+# Comptes et favoris MovieMatch
 
 Cette version permet de tester l'inscription, la connexion, la déconnexion et des favoris
-associés à un compte. Tous les comptes, les sessions et les favoris connectés disparaissent
-au redémarrage du backend. Il faut garder une seule instance et un seul processus/worker.
+associés à un compte. Les comptes, sessions et favoris connectés sont enregistrés dans
+PostgreSQL et restent disponibles après un redémarrage du backend.
 Les favoris visiteurs restent dans le `sessionStorage` de leur onglet.
 
 ## Organisation du backend
@@ -11,10 +11,10 @@ Les favoris visiteurs restent dans le `sessionStorage` de leur onglet.
 les longueurs, les usernames et les IDs avant l'exécution de la logique. Les champs inconnus
 sont refusés : le client ne peut pas fournir lui-même un `user_id` à l'inscription.
 
-`services/account_store.py` contient les données temporaires et les opérations de stockage.
-Il conserve quatre dictionnaires : utilisateurs par ID, correspondance username/ID,
-sessions par empreinte de jeton, favoris par ID utilisateur. Il renvoie des copies des listes
-de favoris pour éviter de modifier accidentellement les données internes.
+`services/account_store.py` définit l'interface de stockage et une implémentation en mémoire
+réservée aux tests unitaires. `services/postgres_account_store.py` implémente ces opérations
+avec Psycopg et du SQL paramétré. `app/db/schema.sql` définit les trois tables `users`,
+`sessions` et `favorites` et est inclus dans l'image du backend.
 
 L'objet utilisateur a exactement les champs suivants :
 
@@ -32,19 +32,19 @@ sessions et applique la limite de tentatives. Il appelle le composant de stockag
 requêtes. La réponse publique contient `id`, `username`, `created_at`, mais jamais le hash du
 mot de passe ou le jeton.
 
-`main.py` crée un stockage et un service d'authentification pour chaque instance de l'application.
-Le stockage n'est pas un dictionnaire global partagé entre les applications de test.
+`main.py` crée un stockage PostgreSQL et un service d'authentification. Le cycle de démarrage
+initialise les tables sans effacer les données ; `/health` vérifie aussi l'accès à la base.
+Une panne de connexion renvoie 503 sans exposer les paramètres de connexion au client.
 
-Cette séparation permettra plus tard de remplacer les opérations du stockage par des accès
-à une base. Aucune dépendance SQLAlchemy, aucun schéma SQL et aucune migration Alembic n'ont
-été ajoutés.
+Les tests peuvent injecter un stockage isolé. Aucune dépendance SQLAlchemy ni migration Alembic
+n'a été ajoutée. Voir [le guide de la base](database.md) pour le lancement et la configuration.
 
 ## Username et mot de passe
 
 Un username comporte 3 à 32 caractères : lettres ASCII, chiffres, `_`, `-` ou `.`.
 Les espaces aux extrémités sont supprimés et le nom est converti en minuscules :
 `Alice`, `ALICE` et ` alice ` désignent le même username. L'unicité est vérifiée lors de
-l'insertion, sous un verrou, même si deux inscriptions arrivent simultanément.
+l'insertion par une contrainte SQL unique, même si deux inscriptions arrivent simultanément.
 
 Le mot de passe d'inscription comporte 8 à 128 caractères, avec au moins une lettre majuscule,
 un chiffre et un caractère spécial (par exemple `!`, `@` ou `#`). Un espace ne compte pas comme
@@ -68,8 +68,8 @@ utilisé, afin de permettre à l'utilisateur d'en choisir un autre.
 1. Le visiteur ajoute des films : seuls leurs IDs sont enregistrés dans `sessionStorage`.
 2. Le formulaire envoie username, mot de passe et `favorite_ids` à `/api/auth/signup`.
 3. Le backend valide les données et hache le mot de passe.
-4. Le stockage crée le compte et sa liste de favoris dans la même section protégée par le
-   verrou. Les IDs sont dédupliqués en conservant leur ordre ; la liste est limitée à 20.
+4. Le stockage crée le compte et sa liste de favoris dans une même transaction PostgreSQL.
+   Les IDs sont dédupliqués en conservant leur ordre ; la liste est limitée à 20.
 5. Le backend crée une session et renvoie le cookie ainsi que le compte public et ses IDs.
 6. Seulement après cette réussite, React efface la liste visiteur de `sessionStorage` et
    utilise les favoris du compte. Une inscription refusée conserve les favoris visiteurs.
@@ -153,8 +153,10 @@ contradictoires. En cas de session expirée, le frontend vérifie à nouveau le 
 `AccountPanel.jsx` contient les formulaires d'inscription et de connexion et le bouton de
 déconnexion. Le champ mot de passe est vidé après l'envoi. Les formulaires disposent de labels,
 des attributs autocomplete appropriés et des contraintes cohérentes avec le backend.
-Les boutons « Se connecter » et « Créer mon compte » sont désactivés tant que le username
-ou le mot de passe ne respecte pas les règles. La soumission vérifie aussi ces conditions.
+Le bouton « Se connecter » devient actif dès que les deux champs sont remplis. Un mot de passe
+incorrect, même court ou sans caractère spécial, peut être envoyé : le serveur refuse la
+connexion avec son message générique. Les critères de création du mot de passe s'appliquent
+uniquement à l'inscription, dont le bouton reste désactivé tant qu'ils ne sont pas remplis.
 À l'inscription, le champ « Confirmer le mot de passe » doit correspondre exactement au
 premier champ pour activer le bouton. Cette confirmation reste dans le formulaire et n'est
 pas envoyée au backend. Les deux champs sont vidés après l'envoi ou un changement de mode.
@@ -182,8 +184,9 @@ récents et la limite de sept films sont conservés.
 
 ## Lancement et test manuel
 
-Installer les dépendances backend mises à jour puis lancer comme précédemment. En Docker,
-reconstruire les images : `docker compose up --build`. Aucun service de base n'est nécessaire.
+Installer les dépendances backend mises à jour et démarrer PostgreSQL. En Docker, reconstruire
+les images : `docker compose --env-file backend/.env up --build -d`. Les étapes complètes
+et la consultation avec Adminer sont dans [le guide PostgreSQL](database.md).
 
 Dans `backend/.env`, les valeurs par défaut conviennent à HTTP local :
 
@@ -193,16 +196,17 @@ AUTH_SESSION_HOURS=24
 ```
 
 Pour un déploiement HTTPS, configurer `AUTH_COOKIE_SECURE=true` et les origines réelles.
-Un backend redémarré ou rechargé par `--reload` perd les comptes et les sessions.
+Un backend redémarré ou rechargé par `--reload` retrouve ses comptes et ses sessions encore valides.
 
 Parcours conseillé : ajouter deux favoris en visiteur, actualiser, créer un compte, vérifier
 leur présence, retirer un film, se déconnecter puis se reconnecter. Créer un second compte
-permet de vérifier l'isolation. Arrêter puis relancer le backend confirme la nature temporaire
-du stockage.
+permet de vérifier l'isolation. Arrêter puis relancer le backend confirme la persistance
+du stockage, tant que le volume PostgreSQL est conservé.
 
 Les tests backend couvrent la validation, les doublons, l'import, les jetons, les cookies,
 les expirations, la révocation, les origines, la limite de tentatives, les favoris et
-deux inscriptions concurrentes. Ils utilisent des services de films simulés.
+deux inscriptions concurrentes. Ils utilisent des services de films simulés. La CI exécute
+aussi des tests sur une vraie base PostgreSQL, dont la persistance et la concurrence des favoris.
 
 ## Références
 

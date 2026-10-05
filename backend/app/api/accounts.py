@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
@@ -58,23 +59,23 @@ def build_account_router(settings: Settings, auth: AuthService) -> APIRouter:
                  dependencies=[Depends(protected_action), Depends(limit_auth)])
     async def signup(body: SignupRequest, request: Request, response: Response) -> AccountResponse:
         user = await auth.signup(body.username, body.password, body.favorite_ids)
-        open_session(request, response, user)
-        return account_response(user)
+        await asyncio.to_thread(open_session, request, response, user)
+        return await asyncio.to_thread(account_response, user)
 
     @router.post("/auth/login", response_model=AccountResponse,
                  dependencies=[Depends(protected_action), Depends(limit_auth)])
     async def login(body: LoginRequest, request: Request, response: Response) -> AccountResponse:
         user = await auth.login(body.username, body.password)
-        open_session(request, response, user)
-        return account_response(user)
+        await asyncio.to_thread(open_session, request, response, user)
+        return await asyncio.to_thread(account_response, user)
 
     @router.get("/auth/me", response_model=AccountResponse)
-    async def me(request: Request, response: Response) -> AccountResponse:
+    def me(request: Request, response: Response) -> AccountResponse:
         response.headers["Cache-Control"] = "no-store"
         return account_response(auth.current_user(request.cookies.get(SESSION_COOKIE)))
 
     @router.post("/auth/logout", status_code=204, dependencies=[Depends(protected_action)])
-    async def logout(request: Request, response: Response) -> None:
+    def logout(request: Request, response: Response) -> None:
         require_user(request)
         auth.logout(request.cookies.get(SESSION_COOKIE))
         response.delete_cookie(
@@ -83,14 +84,14 @@ def build_account_router(settings: Settings, auth: AuthService) -> APIRouter:
         )
 
     @router.get("/favorites", response_model=FavoritesResponse)
-    async def favorites(response: Response, user: Annotated[User, Depends(require_user)]) -> FavoritesResponse:
+    def favorites(response: Response, user: Annotated[User, Depends(require_user)]) -> FavoritesResponse:
         response.headers["Cache-Control"] = "no-store"
         return FavoritesResponse(ids=auth.store.favorite_ids(user.id))
 
     @router.put("/favorites/{movie_id}", response_model=FavoritesResponse,
                 dependencies=[Depends(protected_action)])
-    async def add_favorite(
-        movie_id: Annotated[int, Path(gt=0)], user: Annotated[User, Depends(require_user)],
+    def add_favorite(
+        movie_id: Annotated[int, Path(gt=0, le=9223372036854775807)], user: Annotated[User, Depends(require_user)],
     ) -> FavoritesResponse:
         try:
             return FavoritesResponse(ids=auth.store.add_favorite(user.id, movie_id))
@@ -99,8 +100,8 @@ def build_account_router(settings: Settings, auth: AuthService) -> APIRouter:
 
     @router.delete("/favorites/{movie_id}", response_model=FavoritesResponse,
                    dependencies=[Depends(protected_action)])
-    async def remove_favorite(
-        movie_id: Annotated[int, Path(gt=0)], user: Annotated[User, Depends(require_user)],
+    def remove_favorite(
+        movie_id: Annotated[int, Path(gt=0, le=9223372036854775807)], user: Annotated[User, Depends(require_user)],
     ) -> FavoritesResponse:
         return FavoritesResponse(ids=auth.store.remove_favorite(user.id, movie_id))
 

@@ -7,6 +7,7 @@ on:
       - "frontend/**"
       - "backend/**"
       - "docker-compose.yml"
+      - "docker-compose.ghcr.yml"
       - ".github/workflows/cicd.yaml"
   pull_request:
     branches: [main]
@@ -14,6 +15,7 @@ on:
       - "frontend/**"
       - "backend/**"
       - "docker-compose.yml"
+      - "docker-compose.ghcr.yml"
       - ".github/workflows/cicd.yaml"
   workflow_dispatch:
 
@@ -52,6 +54,26 @@ jobs:
   backend-ci:
     name: Backend - check and test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: moviematch_test
+          POSTGRES_USER: moviematch_test
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U moviematch_test -d moviematch_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DB_HOST: 127.0.0.1
+      TEST_DB_PORT: "5432"
+      TEST_DB_NAME: moviematch_test
+      TEST_DB_USER: moviematch_test
+      TEST_DB_PASSWORD: ci-only-password
     defaults:
       run:
         working-directory: backend
