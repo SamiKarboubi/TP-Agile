@@ -15,7 +15,7 @@ from test_main import FakeAnalyzer, FakeRecommender
 
 
 HEADERS = {"X-MovieMatch-Request": "1", "Origin": "http://testserver"}
-PASSWORD = "Une longue phrase secrète!"
+PASSWORD = "Une longue phrase secrète 1!"
 
 
 @pytest.fixture
@@ -79,6 +79,31 @@ def test_invalid_signup_creates_no_account(setup_account, body):
     client, store, _ = setup_account
     assert client.post("/api/auth/signup", json=body, headers=HEADERS).status_code == 422
     assert store._users == {}
+
+
+@pytest.mark.parametrize("password", [
+    "Abcd1!x",       # Fewer than eight characters.
+    "abcdef1!",      # No uppercase letter.
+    "Abcdefg!",      # No digit.
+    "Abcdef12",      # No special character.
+    "Abcdef1 ",      # A space does not count as a special character.
+    "Abcdef1!" + "x" * 121,  # More than 128 characters.
+])
+def test_signup_rejects_passwords_missing_a_required_criterion(setup_account, password):
+    client, store, _ = setup_account
+    response = client.post("/api/auth/signup", headers=HEADERS, json={
+        "username": "alice", "password": password,
+    })
+    assert response.status_code == 422
+    assert store._users == {}
+
+
+@pytest.mark.parametrize("password", ["Abcdef1!", "Ébcdef1!", "Abcdef1!" + "x" * 120])
+def test_signup_accepts_passwords_meeting_all_criteria(setup_account, password):
+    client, _, _ = setup_account
+    body = {"username": "alice", "password": password}
+    assert client.post("/api/auth/signup", headers=HEADERS, json=body).status_code == 201
+    assert client.post("/api/auth/login", headers=HEADERS, json=body).status_code == 200
 
 
 def test_login_rotates_token_and_logout_revokes_it(setup_account):
