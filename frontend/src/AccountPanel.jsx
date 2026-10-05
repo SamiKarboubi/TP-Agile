@@ -39,8 +39,12 @@ export default function AccountPanel({ account, onDone }) {
             <label htmlFor="password">Mot de passe</label>
             <input id="password" name="password" type="password" autoComplete={signup ? 'new-password' : 'current-password'}
               value={password} onChange={(event) => setPassword(event.target.value)} required
-              minLength={signup ? 12 : 1} maxLength={128} disabled={account.busy || !account.ready} />
-            {signup && <small>Au moins 12 caractères. Les espaces sont acceptés.</small>}
+              minLength={signup ? 8 : 1} maxLength={128}
+              pattern={signup ? '(?=.*\\p{Lu})(?=.*[0-9])(?=.*[^\\p{L}\\p{N}\\s]).{8,128}' : undefined}
+              title={signup ? 'Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial.' : undefined}
+              aria-describedby={signup ? 'password-help' : undefined}
+              disabled={account.busy || !account.ready} />
+            {signup && <small id="password-help">Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial (ex. !, @, #). Un espace ne compte pas comme caractère spécial.</small>}
             <button className="account-primary" type="submit" disabled={account.busy || !account.ready}>
               {account.busy ? 'Un instant…' : signup ? 'Créer mon compte' : 'Se connecter'}
             </button>

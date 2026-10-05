@@ -46,7 +46,10 @@ Les espaces aux extrémités sont supprimés et le nom est converti en minuscule
 `Alice`, `ALICE` et ` alice ` désignent le même username. L'unicité est vérifiée lors de
 l'insertion, sous un verrou, même si deux inscriptions arrivent simultanément.
 
-Le mot de passe d'inscription comporte 12 à 128 caractères. Il est conservé tel que saisi
+Le mot de passe d'inscription comporte 8 à 128 caractères, avec au moins une lettre majuscule,
+un chiffre et un caractère spécial (par exemple `!`, `@` ou `#`). Un espace ne compte pas comme
+caractère spécial. Ces règles sont vérifiées dans le formulaire et par le backend.
+Le mot de passe est conservé tel que saisi
 pour le hachage, y compris les espaces. La bibliothèque `argon2-cffi` crée un hash Argon2id
 avec ses paramètres par défaut et un sel aléatoire. Deux utilisateurs ayant le même mot de
 passe ont donc des hashes différents.

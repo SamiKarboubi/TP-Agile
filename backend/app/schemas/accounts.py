@@ -16,8 +16,21 @@ class LoginRequest(BaseModel):
 
 
 class SignupRequest(LoginRequest):
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     favorite_ids: list[PositiveInt] = Field(default_factory=list, max_length=20)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        has_uppercase = any(character.isalpha() and character.isupper() for character in value)
+        has_digit = any(character in "0123456789" for character in value)
+        has_special = any(not character.isalnum() and not character.isspace() for character in value)
+        if not (has_uppercase and has_digit and has_special):
+            raise ValueError(
+                "Le mot de passe doit contenir au moins 8 caractères, "
+                "une lettre majuscule, un chiffre et un caractère spécial."
+            )
+        return value
 
 
 class PublicUser(BaseModel):
