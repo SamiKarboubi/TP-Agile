@@ -5,6 +5,7 @@ from app.core.constants import OUT_OF_SCOPE_MESSAGE
 from app.main import create_app
 from app.schemas.intents import MovieConstraints, MovieSearchIntent
 from app.schemas.recommendations import MovieResult, RecommendationResponse
+from app.services.account_store import InMemoryAccountStore
 
 
 class FakeAnalyzer:
@@ -44,7 +45,7 @@ def make_client(max_length: int = 200) -> tuple[TestClient, FakeAnalyzer, FakeRe
     analyzer = FakeAnalyzer()
     recommender = FakeRecommender()
     settings = Settings(max_user_message_length=max_length)
-    app = create_app(settings=settings, analyzer=analyzer, recommender=recommender)
+    app = create_app(settings=settings, analyzer=analyzer, recommender=recommender, account_store=InMemoryAccountStore())
     return TestClient(app), analyzer, recommender
 
 

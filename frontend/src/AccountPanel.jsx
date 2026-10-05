@@ -12,8 +12,10 @@ export default function AccountPanel({ account, onDone }) {
   const confirmationMismatch = signup && passwordConfirmation !== ''
     && passwordConfirmation !== password
   const canSubmit = account.ready && !account.busy
-    && USERNAME_PATTERN.test(username) && PASSWORD_PATTERN.test(password)
-    && (!signup || passwordConfirmation === password)
+    && (signup
+      ? USERNAME_PATTERN.test(username) && PASSWORD_PATTERN.test(password)
+        && passwordConfirmation === password
+      : username.trim() !== '' && password !== '')
 
   async function submit(event) {
     event.preventDefault()
@@ -44,18 +46,18 @@ export default function AccountPanel({ account, onDone }) {
           <form className="account-form" onSubmit={submit}>
             <label htmlFor="username">Nom d’utilisateur</label>
             <input id="username" name="username" autoComplete="username" value={username}
-              onChange={(event) => setUsername(event.target.value)} required minLength={3} maxLength={32}
-              pattern={USERNAME_PATTERN.source} aria-describedby="username-help" disabled={account.busy || !account.ready} />
+              onChange={(event) => setUsername(event.target.value)} required minLength={signup ? 3 : undefined} maxLength={32}
+              pattern={signup ? USERNAME_PATTERN.source : undefined} aria-describedby="username-help" disabled={account.busy || !account.ready} />
             <small id="username-help">3 à 32 caractères : lettres sans accent, chiffres, point, tiret ou _.</small>
             <label htmlFor="password">Mot de passe</label>
             <input id="password" name="password" type="password" autoComplete={signup ? 'new-password' : 'current-password'}
               value={password} onChange={(event) => setPassword(event.target.value)} required
-              minLength={8} maxLength={128}
-              pattern={PASSWORD_PATTERN.source}
-              title="Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial."
-              aria-describedby="password-help"
+              minLength={signup ? 8 : undefined} maxLength={128}
+              pattern={signup ? PASSWORD_PATTERN.source : undefined}
+              title={signup ? 'Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial.' : undefined}
+              aria-describedby={signup ? 'password-help' : undefined}
               disabled={account.busy || !account.ready} />
-            <small id="password-help">Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial (ex. !, @, #). Un espace ne compte pas comme caractère spécial.</small>
+            {signup && <small id="password-help">Au moins 8 caractères, une majuscule, un chiffre et un caractère spécial (ex. !, @, #). Un espace ne compte pas comme caractère spécial.</small>}
             {signup && <>
               <label htmlFor="password-confirmation">Confirmer le mot de passe</label>
               <input id="password-confirmation" name="password-confirmation" type="password"

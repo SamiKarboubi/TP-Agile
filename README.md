@@ -1,4 +1,4 @@
-# Movie Recommendation
+# MovieMatch
 
 Première version d’une application conversationnelle de recherche et de recommandation de films.
 Les critères sont extraits par Claude, puis les résultats factuels proviennent de TMDB et d’OMDb
@@ -13,6 +13,7 @@ Navigateur React
 FastAPI
   ├── Claude : classification + extraction structurée des contraintes
   ├── moteur déterministe : résolution, filtrage et classement
+  ├── comptes, sessions, favoris ──► PostgreSQL
   └── client MCP stdio ──► tmdb-mcp ──► TMDB + OMDb
 ```
 
@@ -31,7 +32,7 @@ a besoin puis fermé avec FastAPI. Il n’expose pas de serveur HTTP séparé.
 - un token TMDB v4 « API Read Access Token » ;
 - une clé Anthropic ;
 - une clé OMDb pour les notes IMDb, Rotten Tomatoes et Metacritic ;
-- facultatif : Docker Desktop et Docker Compose.
+- PostgreSQL 17, lancé simplement avec Docker Desktop et Docker Compose.
 
 ## Variables d’environnement
 
@@ -42,6 +43,9 @@ Copy-Item backend/.env.example backend/.env
 ```
 
 Puis renseigner `backend/.env`. Aucun secret ne doit être envoyé au frontend ou ajouté à Git.
+Si ce fichier existe déjà, ajouter les variables manquantes sans remplacer les clés existantes.
+Renseigner notamment `DB_PASSWORD`, obligatoire. Voir le
+[guide PostgreSQL, environnement, Adminer et partage GHCR](docs/database.md).
 
 | Variable | Description |
 |---|---|
@@ -63,6 +67,14 @@ Puis renseigner `backend/.env`. Aucun secret ne doit être envoyé au frontend o
 | `CORS_ORIGINS` | Origines frontend autorisées, séparées par des virgules. |
 | `AUTH_COOKIE_SECURE` | `false` pour les tests HTTP locaux ; `true` pour un déploiement HTTPS. |
 | `AUTH_SESSION_HOURS` | Durée d'une session de connexion, par défaut `24`. |
+| `DB_HOST` | `127.0.0.1` pour un backend sur le PC ; Compose impose `db` dans Docker. |
+| `DB_PORT` | Port PostgreSQL, par défaut `5432`. |
+| `DB_NAME` | Nom de la base, par défaut `moviematch`. |
+| `DB_USER` | Compte PostgreSQL technique, par défaut `moviematch_app`. |
+| `DB_PASSWORD` | Mot de passe PostgreSQL obligatoire, à choisir et garder secret. |
+| `DB_CONNECT_TIMEOUT_SECONDS` | Délai de connexion PostgreSQL, par défaut `5`. |
+| `GHCR_REPOSITORY` | Dépôt des images, par défaut `samikarboubi/tp-agile`. |
+| `IMAGE_TAG` | Tag commun des images GHCR, idéalement le SHA court d'un push validé. |
 
 ## Installation et lancement local
 
@@ -71,12 +83,13 @@ Puis renseigner `backend/.env`. Aucun secret ne doit être envoyé au frontend o
 Depuis la racine du projet :
 
 ```powershell
+docker compose --env-file backend/.env up -d db
 python -m venv backend/.venv
 .\backend\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r backend/requirements-dev.txt
 Set-Location backend
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 FastAPI lance automatiquement le MCP avec `npx -y tmdb-mcp@0.11.0` au premier appel de
@@ -110,11 +123,30 @@ Ouvrir <http://localhost:5173>. Vite transmet `/api` à <http://localhost:8000>.
 Après avoir créé `backend/.env` :
 
 ```powershell
-docker compose up --build
+docker compose --env-file backend/.env up --build -d
 ```
 
 L’application est disponible sur <http://localhost:3000> et l’API sur
 <http://localhost:8000>. Le conteneur backend embarque Node 22 et le paquet MCP épinglé.
+PostgreSQL et ses tables démarrent automatiquement ; les données restent dans un volume nommé.
+
+Pour consulter les données dans le navigateur :
+
+```powershell
+docker compose --env-file backend/.env --profile tools up -d adminer
+```
+
+Ouvrir <http://localhost:8080>, choisir PostgreSQL, serveur `db`, et utiliser `DB_USER`,
+`DB_PASSWORD`, `DB_NAME`. Les images GHCR se lancent sans compiler avec le fichier autonome :
+
+```powershell
+docker compose --env-file backend/.env -f docker-compose.ghcr.yml pull
+docker compose --env-file backend/.env -f docker-compose.ghcr.yml up -d
+```
+
+Voir [le guide complet](docs/database.md) pour les identifiants, le partage à un collègue,
+la persistance, les sauvegardes et le dépannage. Les anciens tags backend en mémoire ne
+contiennent pas cette fonctionnalité : publier une nouvelle version avant de les utiliser.
 
 ## Fonctionnement du pipeline
 
@@ -150,8 +182,8 @@ les fiches sont reconstruites via le MCP.
 
 « Mon compte » permet de s'inscrire avec un username unique et un mot de passe, de se connecter
 et de se déconnecter. L'inscription importe automatiquement les favoris visiteurs et ouvre une
-session. Les comptes, sessions et favoris connectés sont conservés **en mémoire du backend** :
-un redémarrage les efface. Utiliser un seul processus/worker et une seule instance backend.
+session. Les comptes, sessions et favoris connectés sont conservés **dans PostgreSQL** :
+un redémarrage du backend les conserve. Les favoris visiteurs restent dans leur onglet.
 
 Pour un utilisateur connecté, les favoris proviennent du backend. Pour un visiteur, chaque
 recherche envoie les identifiants de l'onglet à `POST /api/recommendations`.
@@ -176,10 +208,13 @@ npm run build
 Les tests n’effectuent aucun véritable appel Claude, TMDB, OMDb ou MCP. Les services externes sont
 simulés pour tester la validation, le garde-fou, le parsing, la limite de sept films et le respect
 des contraintes obligatoires, ainsi que les comptes, les sessions et l'isolation des favoris.
+Les tests PostgreSQL utilisent une base dédiée configurée par les variables `TEST_DB_*`.
+Ils sont exécutés en CI ; localement ils sont ignorés si `TEST_DB_PASSWORD` est absent.
 
 ## Limites de cette V1
 
-- comptes et favoris connectés temporaires en mémoire, sans base de données ;
+- configuration Docker prévue pour les tests locaux ; un hébergement public demande HTTPS,
+  un compte PostgreSQL aux droits limités et une stratégie de sauvegarde ;
 - pas de récupération de mot de passe ni de validation externe d'identité dans cette version ;
 - pas de streaming : la réponse est affichée après validation complète des résultats ;
 - première page TMDB seulement, soit au plus vingt candidats ;

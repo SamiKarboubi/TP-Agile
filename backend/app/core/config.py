@@ -1,7 +1,7 @@
 import json
 from functools import lru_cache
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     auth_cookie_secure: bool = False
     auth_session_hours: int = Field(default=24, ge=1, le=168)
+
+    db_host: str = "127.0.0.1"
+    db_port: int = Field(default=5432, ge=1, le=65535)
+    db_name: str = "moviematch"
+    db_user: str = "moviematch_app"
+    db_password: SecretStr = SecretStr("")
+    db_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
 
     @field_validator("tmdb_region")
     @classmethod
