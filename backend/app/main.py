@@ -8,11 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import build_router
+from app.api.accounts import build_account_router
 from app.core.config import Settings, get_settings
 from app.services.claude_service import ClaudeService
 from app.services.errors import ApplicationServiceError
 from app.services.mcp_service import MCPService
 from app.services.movie_service import MovieRecommendationService
+from app.services.account_store import InMemoryAccountStore
+from app.services.auth_service import AuthService
 
 
 logger = logging.getLogger(__name__)
@@ -22,9 +25,11 @@ def create_app(
     settings: Settings | None = None,
     analyzer: Any | None = None,
     recommender: Any | None = None,
+    account_store: InMemoryAccountStore | None = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
     mcp_service: MCPService | None = None
+    auth = AuthService(app_settings, account_store or InMemoryAccountStore())
 
     if analyzer is None:
         analyzer = ClaudeService(app_settings)
@@ -46,11 +51,12 @@ def create_app(
     application.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
-        allow_credentials=False,
-        allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Content-Type", "X-MovieMatch-Request", "X-MovieMatch-User"],
     )
-    application.include_router(build_router(app_settings, analyzer, recommender))
+    application.include_router(build_router(app_settings, analyzer, recommender, auth))
+    application.include_router(build_account_router(app_settings, auth))
 
     @application.get("/health", tags=["health"])
     async def health_check() -> dict[str, str]:

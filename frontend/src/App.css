@@ -41,6 +41,25 @@
 .view-nav button.active { color: #1c211c; background: #d4b577; }
 .view-nav button span { margin-left: 4px; font-weight: 700; }
 
+.account-status { margin: 0; padding: 12px clamp(22px, 5vw, 58px); color: #b8b7ae; border-bottom: 1px solid #343531; font-size: 13px; }
+.account-status p { margin: 0; }
+.account-status button, .account-invite { padding: 8px 0; background: transparent; border: 0; color: #d4b577; cursor: pointer; text-decoration: underline; }
+.account-panel { width: min(620px, 100%); padding: 55px clamp(22px, 5vw, 58px) 80px; margin: 0 auto; box-sizing: border-box; }
+.account-panel h2 { color: #f5f0e6; font: 400 clamp(36px, 6vw, 54px)/1.1 Georgia, serif; letter-spacing: -.04em; overflow-wrap: anywhere; }
+.account-panel h2 em { color: #d4b577; font-weight: 400; }
+.account-panel p { color: #b8b7ae; font-size: 14px; line-height: 1.6; }
+.account-tabs { display: flex; gap: 8px; }
+.account-tabs button { padding: 10px 14px; border: 1px solid #5a5d50; border-radius: 3px; background: transparent; color: #b8b7ae; cursor: pointer; }
+.account-tabs button[aria-pressed="true"] { border-color: #d4b577; color: #d4b577; }
+.account-form { display: grid; gap: 10px; margin-top: 28px; }
+.account-form label { margin-top: 10px; font-size: 13px; color: #f5f0e6; }
+.account-form input { padding: 13px; min-width: 0; background: #222622; border: 1px solid #5a5d50; border-radius: 3px; color: #f5f0e6; font: inherit; }
+.account-form input:focus { outline: 2px solid #d4b577; outline-offset: 2px; }
+.account-form small { color: #a8a79d; line-height: 1.5; }
+.account-primary { margin-top: 18px; padding: 13px 18px; border: 0; border-radius: 3px; background: #d4b577; color: #1b211c; font-weight: 700; cursor: pointer; }
+.account-primary:hover:not(:disabled) { background: #e6ca94; }
+.account-panel button:disabled { opacity: .5; cursor: not-allowed; }
+
 .conversation { min-width: 0; padding: 34px clamp(22px, 5vw, 58px) 64px; }
 .welcome { max-width: 760px; margin: min(11vh, 92px) auto 0; }
 .eyebrow { color: #d4b577; }

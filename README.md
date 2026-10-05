@@ -61,6 +61,8 @@ Puis renseigner `backend/.env`. Aucun secret ne doit être envoyé au frontend o
 | `MOVIE_CANDIDATE_LIMIT` | Nombre maximal de candidats TMDB examinés, limité à vingt. |
 | `DEFAULT_MIN_VOTES` | Nombre minimal de votes TMDB pour une demande « bien notée ». |
 | `CORS_ORIGINS` | Origines frontend autorisées, séparées par des virgules. |
+| `AUTH_COOKIE_SECURE` | `false` pour les tests HTTP locaux ; `true` pour un déploiement HTTPS. |
+| `AUTH_SESSION_HOURS` | Durée d'une session de connexion, par défaut `24`. |
 
 ## Installation et lancement local
 
@@ -138,25 +140,33 @@ jamais pour satisfaire une contrainte IMDb.
 - `Un film avec Christian Bale de moins de 2 heures.`
 - `Je veux quelque chose dans le style d’Interstellar.`
 
-## Favoris de session
+## Comptes et favoris
 
-Le bouton cœur ajoute ou retire un film des favoris. Le navigateur conserve uniquement ses
-identifiants TMDB dans `sessionStorage` (au plus 20 films par onglet). Après une actualisation,
+Le bouton cœur ajoute ou retire un film des favoris. Pour un visiteur, le navigateur conserve
+uniquement les identifiants TMDB dans `sessionStorage` (au plus 20 films par onglet). Après une actualisation,
 l'onglet « Favoris » récupère les fiches via `POST /api/movies/lookup` avec un corps
 `{"ids":[603,27205]}`. Le backend utilise le MCP TMDB existant pour reconstruire les fiches ;
-aucun compte ni stockage serveur n'est nécessaire.
+les fiches sont reconstruites via le MCP.
 
-Chaque recherche envoie les identifiants des favoris de l'onglet à `POST /api/recommendations`.
+« Mon compte » permet de s'inscrire avec un username unique et un mot de passe, de se connecter
+et de se déconnecter. L'inscription importe automatiquement les favoris visiteurs et ouvre une
+session. Les comptes, sessions et favoris connectés sont conservés **en mémoire du backend** :
+un redémarrage les efface. Utiliser un seul processus/worker et une seule instance backend.
+
+Pour un utilisateur connecté, les favoris proviennent du backend. Pour un visiteur, chaque
+recherche envoie les identifiants de l'onglet à `POST /api/recommendations`.
 Le backend utilise uniquement les dix derniers pour limiter les appels MCP. La similarité
 réordonne les candidats déjà trouvés ; elle ne suffit jamais à faire apparaître un film qui ne
 correspond pas à la recherche.
+
+Voir [l'explication complète de l'architecture et de la sécurité](docs/authentication.md).
 
 ## Tests et qualité
 
 ```powershell
 .\backend\.venv\Scripts\Activate.ps1
 Set-Location backend
-pytest
+python -m pytest
 
 Set-Location ../frontend
 npm run lint
@@ -165,11 +175,12 @@ npm run build
 
 Les tests n’effectuent aucun véritable appel Claude, TMDB, OMDb ou MCP. Les services externes sont
 simulés pour tester la validation, le garde-fou, le parsing, la limite de sept films et le respect
-des contraintes obligatoires.
+des contraintes obligatoires, ainsi que les comptes, les sessions et l'isolation des favoris.
 
 ## Limites de cette V1
 
-- pas d’authentification, de profil, d’historique ou de base de données ;
+- comptes et favoris connectés temporaires en mémoire, sans base de données ;
+- pas de récupération de mot de passe ni de validation externe d'identité dans cette version ;
 - pas de streaming : la réponse est affichée après validation complète des résultats ;
 - première page TMDB seulement, soit au plus vingt candidats ;
 - les combinaisons « similaire à… » avec fournisseur, société ou mot-clé obligatoire sont
