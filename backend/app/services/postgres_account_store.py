@@ -117,6 +117,19 @@ class PostgresAccountStore:
         with self._connect() as connection:
             return self._favorite_ids(connection, user_id)
 
+    def merge_favorites(self, user_id: str, movie_ids: list[int]) -> list[int]:
+        with self._connect() as connection:
+            self._lock_user(connection, user_id)
+            ids = self._favorite_ids(connection, user_id)
+            for movie_id in movie_ids:
+                if movie_id not in ids and len(ids) < 20:
+                    connection.execute(
+                        "INSERT INTO favorites (user_id, movie_id) VALUES (%s, %s)",
+                        (user_id, movie_id),
+                    )
+                    ids.append(movie_id)
+            return ids
+
     def add_favorite(self, user_id: str, movie_id: int) -> list[int]:
         with self._connect() as connection:
             self._lock_user(connection, user_id)

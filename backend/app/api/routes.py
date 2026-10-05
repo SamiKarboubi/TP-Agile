@@ -1,7 +1,7 @@
 import asyncio
 from typing import Protocol
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from app.api.accounts import SESSION_COOKIE
 from app.services.auth_service import AuthService
 
@@ -28,6 +28,7 @@ class Recommender(Protocol):
     ) -> RecommendationResponse: ...
 
     async def lookup_movies(self, ids: list[int]) -> list[MovieResult]: ...
+    async def random_movies(self) -> list[MovieResult]: ...
 
 
 def build_router(
@@ -62,6 +63,11 @@ def build_router(
             return RecommendationResponse(message=OUT_OF_SCOPE_MESSAGE, movies=[])
         favorite_ids = await asyncio.to_thread(auth.store.favorite_ids, user.id) if user else list(dict.fromkeys(request.favorite_ids))
         return await recommender.recommend(intent, favorite_ids)
+
+    @router.get("/movies/random", response_model=MovieLookupResponse)
+    async def random_movies(response: Response) -> MovieLookupResponse:
+        response.headers["Cache-Control"] = "no-store"
+        return MovieLookupResponse(movies=await recommender.random_movies())
 
     @router.post("/movies/lookup", response_model=MovieLookupResponse)
     async def lookup_movies(request: MovieLookupRequest) -> MovieLookupResponse:

@@ -28,6 +28,7 @@ class AccountStore(Protocol):
     def session_user(self, token_hash: str) -> User | None: ...
     def delete_session(self, token_hash: str) -> None: ...
     def favorite_ids(self, user_id: str) -> list[int]: ...
+    def merge_favorites(self, user_id: str, movie_ids: list[int]) -> list[int]: ...
     def add_favorite(self, user_id: str, movie_id: int) -> list[int]: ...
     def remove_favorite(self, user_id: str, movie_id: int) -> list[int]: ...
 
@@ -89,6 +90,14 @@ class InMemoryAccountStore:
     def favorite_ids(self, user_id: str) -> list[int]:
         with self._lock:
             return self._favorites[user_id].copy()
+
+    def merge_favorites(self, user_id: str, movie_ids: list[int]) -> list[int]:
+        with self._lock:
+            ids = self._favorites[user_id]
+            for movie_id in movie_ids:
+                if movie_id not in ids and len(ids) < 20:
+                    ids.append(movie_id)
+            return ids.copy()
 
     def add_favorite(self, user_id: str, movie_id: int) -> list[int]:
         with self._lock:

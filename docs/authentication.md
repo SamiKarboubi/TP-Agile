@@ -49,6 +49,9 @@ l'insertion par une contrainte SQL unique, même si deux inscriptions arrivent s
 Le mot de passe d'inscription comporte 8 à 128 caractères, avec au moins une lettre majuscule,
 un chiffre et un caractère spécial (par exemple `!`, `@` ou `#`). Un espace ne compte pas comme
 caractère spécial. Ces règles sont vérifiées dans le formulaire et par le backend.
+Le formulaire affiche chaque condition séparément pendant la saisie : les conditions remplies
+sont cochées, celles qui manquent restent visibles. Le backend renvoie aussi les erreurs
+précises, sans inclure la valeur du mot de passe dans la réponse de validation.
 Le mot de passe est conservé tel que saisi
 pour le hachage, y compris les espaces. La bibliothèque `argon2-cffi` crée un hash Argon2id
 avec ses paramètres par défaut et un sel aléatoire. Deux utilisateurs ayant le même mot de
@@ -77,9 +80,17 @@ utilisé, afin de permettre à l'utilisateur d'en choisir un autre.
 L'import ne demande aucune information de film au MCP et n'enregistre aucune fiche complète.
 Le chargement ultérieur des cartes utilise toujours `/api/movies/lookup`.
 
-Une connexion à un compte existant récupère sa propre liste. Elle n'importe pas automatiquement
-les favoris visiteurs. Ceux-ci restent disponibles en mode visiteur après déconnexion, s'ils
-n'ont pas déjà été transférés par une inscription réussie.
+Une connexion à un compte existant envoie aussi `favorite_ids` à `/api/auth/login`.
+Le backend vérifie d'abord le mot de passe, puis fusionne les IDs visiteurs avec la liste
+du compte dans une transaction. Il verrouille la ligne utilisateur pendant la fusion :
+deux onglets ne peuvent pas créer de doublon ni dépasser la limite de 20 films.
+Les favoris existants restent en premier, puis les nouveaux favoris visiteurs sont ajoutés
+dans leur ordre. Un ID déjà présent ne consomme pas une nouvelle place.
+Après la réponse réussie, React retire de la session visiteur uniquement les IDs présents
+dans le compte. Si celui-ci est plein, les IDs restants sont conservés dans `sessionStorage`
+et un message l'indique. Ils restent accessibles après déconnexion et pourront être importés
+lors d'une prochaine connexion après avoir libéré des places. Une connexion refusée conserve
+tous les favoris visiteurs et ne modifie pas les favoris du compte.
 
 ## Jeton et session
 
@@ -175,7 +186,7 @@ récents et la limite de sept films sont conservés.
 | Méthode et chemin | Corps / réponse |
 | --- | --- |
 | `POST /api/auth/signup` | Reçoit username, password, favorite_ids ; renvoie user et favorite_ids, pose le cookie. |
-| `POST /api/auth/login` | Reçoit username et password ; renvoie user et favorite_ids, pose le cookie. |
+| `POST /api/auth/login` | Reçoit username, password et favorite_ids optionnels ; fusionne les favoris après vérification, pose le cookie. |
 | `GET /api/auth/me` | Renvoie user et favorite_ids, ou user=null pour un visiteur. |
 | `POST /api/auth/logout` | Révoque la session et efface le cookie ; réponse 204. |
 | `GET /api/favorites` | Renvoie les IDs du compte connecté. |

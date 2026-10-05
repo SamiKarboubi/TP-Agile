@@ -59,6 +59,41 @@
 .account-primary { margin-top: 18px; padding: 13px 18px; border: 0; border-radius: 3px; background: #d4b577; color: #1b211c; font-weight: 700; cursor: pointer; }
 .account-primary:hover:not(:disabled) { background: #e6ca94; }
 .account-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.password-rules { list-style: none; padding: 0; margin: 0; color: #a8a79d; font-size: 12px; line-height: 1.7; }
+.password-rules .rule-valid { color: #b2d1ac; }
+.password-rules .rule-missing { color: #f3aaa0; }
+.account-form small.error { color: #f3aaa0; }
+
+.welcome-selection { width: min(1180px, 100%); min-height: 100svh; margin: auto; padding: 28px clamp(20px, 5vw, 64px) 50px; box-sizing: border-box; }
+.welcome-selection-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 30px; margin-bottom: 50px; border-bottom: 1px solid #343531; }
+.welcome-brand { color: #f5f0e6; font: 30px Georgia, serif; letter-spacing: -.055em; }
+.welcome-brand span { color: #d4b577; }
+.welcome-skip { border: 0; background: transparent; color: #d4b577; font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
+.welcome-selection h1 { margin: 14px 0; color: #f5f0e6; font: 400 clamp(44px, 7vw, 76px)/1.05 Georgia, serif; letter-spacing: -.05em; }
+.welcome-selection h1 em { color: #d4b577; }
+.welcome-description { max-width: 590px; color: #b8b7ae; line-height: 1.6; }
+.welcome-movies { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; margin: 32px 0; }
+.welcome-movie { min-width: 0; display: flex; flex-direction: column; border: 1px solid #343531; background: #1c201d; border-radius: 5px; overflow: hidden; }
+.welcome-movie > img, .welcome-poster-empty { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; background: #282e27; }
+.welcome-poster-empty { display: grid; place-items: center; color: #d4b577; font: italic 20px Georgia, serif; }
+.welcome-movie-copy { display: flex; flex: 1; flex-direction: column; align-items: flex-start; padding: 14px; }
+.welcome-year { color: #b8b7ae; font-size: 11px; }
+.welcome-movie h2 { margin: 8px 0 18px; color: #f5f0e6; font: 21px/1.15 Georgia, serif; overflow-wrap: anywhere; }
+.welcome-movie .favorite-toggle { margin-top: auto; font-size: 12px; padding: 9px 10px; }
+.welcome-continue { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-top: 1px solid #343531; padding-top: 24px; }
+.welcome-continue p { max-width: 520px; color: #b8b7ae; font-size: 13px; line-height: 1.6; }
+.welcome-continue .account-primary { margin: 0; flex-shrink: 0; }
+.welcome-selection button:focus-visible { outline: 2px solid #d4b577; outline-offset: 4px; }
+@media (max-width: 850px) {
+  .welcome-movies { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .welcome-continue { align-items: flex-start; flex-direction: column; gap: 10px; }
+}
+@media (max-width: 520px) {
+  .welcome-selection-header { margin-bottom: 32px; }
+  .welcome-brand { font-size: 25px; }
+  .welcome-movies { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .welcome-movie h2 { font-size: 19px; }
+}
 
 .conversation { min-width: 0; padding: 34px clamp(22px, 5vw, 58px) 64px; }
 .welcome { max-width: 760px; margin: min(11vh, 92px) auto 0; }

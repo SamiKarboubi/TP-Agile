@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api'
+import { authenticateAccount } from './authenticateAccount'
 
 const FAVORITES_KEY = 'moviematch:favorites'
 export const MAX_FAVORITES = 20
@@ -26,6 +27,7 @@ export function useAccount() {
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [accountError, setAccountError] = useState('')
+  const [accountNotice, setAccountNotice] = useState('')
   const [storageError, setStorageError] = useState(false)
 
   const applyAccount = useCallback((data) => {
@@ -78,13 +80,13 @@ export function useAccount() {
     setBusy(true)
     requestVersion.current += 1
     setAccountError('')
+    setAccountNotice('')
+    const visitorIds = [...guestIds.current]
     try {
-      const data = await api(`/auth/${mode}`, {
-        method: 'POST',
-        body: { username, password, ...(mode === 'signup' ? { favorite_ids: guestIds.current } : {}) },
-      })
-      // Clear the visitor list only after signup and its import have succeeded.
-      if (mode === 'signup') saveGuestIds([])
+      const { data, remaining } = await authenticateAccount(mode, username, password, visitorIds)
+      // Keep overflow locally; failed authentication never clears visitor favorites.
+      saveGuestIds(remaining)
+      if (remaining.length) setAccountNotice(`${remaining.length} favori(s) restent dans la session visiteur : votre compte a atteint la limite de 20 favoris. Ils seront accessibles après déconnexion.`)
       applyAccount(data)
       return true
     } catch (error) {
@@ -105,6 +107,7 @@ export function useAccount() {
     let expired = false
     try {
       await api('/auth/logout', { method: 'POST', userId: userRef.current?.id })
+      setAccountNotice('')
       applyAccount({ user: null, favorite_ids: [] })
     } catch (error) {
       expired = error.status === 401
@@ -149,7 +152,7 @@ export function useAccount() {
   }
 
   return {
-    user, favoriteIds, ready, busy, accountError, storageError,
+    user, favoriteIds, ready, busy, accountError, accountNotice, storageError,
     identityVersion, refresh, authenticate, logout, toggleFavorite,
   }
 }

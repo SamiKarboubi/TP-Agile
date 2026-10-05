@@ -3,6 +3,7 @@ import './App.css'
 import { api } from './api'
 import { MAX_FAVORITES, useAccount } from './useAccount'
 import AccountPanel from './AccountPanel'
+import WelcomeSelection from './WelcomeSelection'
 
 const DEFAULT_MAX_LENGTH = 200
 const SUGGESTIONS = [
@@ -222,6 +223,7 @@ function MovieApp({ account }) {
         </nav>
       </header>
       {!ready && !account.accountError && <p className="account-status" role="status">Vérification de la connexion…</p>}
+      {account.accountNotice && <p className="account-status" role="status">{account.accountNotice}</p>}
       {account.accountError && <div className="account-status" role="alert">
         <p className="error">{account.accountError}</p>
         {!ready && <button type="button" onClick={account.refresh}>Réessayer</button>}
@@ -347,6 +349,16 @@ function MovieApp({ account }) {
 
 function App() {
   const account = useAccount()
+  const [showWelcome, setShowWelcome] = useState(() => {
+    try { return window.sessionStorage.getItem('moviematch:welcome-dismissed') !== '1' }
+    catch { return true }
+  })
+  function continueToSite() {
+    try { window.sessionStorage.setItem('moviematch:welcome-dismissed', '1') }
+    catch { /* Dismissal still works when browser storage is unavailable. */ }
+    setShowWelcome(false)
+  }
+  if (showWelcome) return <WelcomeSelection account={account} onContinue={continueToSite} />
   // Reset the conversation and movie cache whenever the connected account changes.
   return <MovieApp key={account.user?.id || 'guest'} account={account} />
 }

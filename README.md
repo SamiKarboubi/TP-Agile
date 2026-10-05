@@ -151,8 +151,12 @@ contiennent pas cette fonctionnalité : publier une nouvelle version avant de le
 ## Fonctionnement du pipeline
 
 1. FastAPI refuse les messages vides ou supérieurs à la limite configurée.
-2. Claude effectue en un seul appel la classification film/hors sujet et l’extraction Pydantic.
-3. Une requête hors sujet reçoit la réponse fixe configurée, sans appel TMDB/MCP.
+2. Le backend récupère les genres disponibles avec `get_movie_genres` via le MCP, puis conserve
+   cette liste en mémoire jusqu'au redémarrage. Claude reçoit les noms exacts dans son prompt
+   et dans les valeurs autorisées de son schéma Pydantic. Il extrait zéro, un ou plusieurs genres,
+   y compris les genres exclus ; un genre inventé est refusé. La classification film/hors sujet
+   et l'extraction des autres contraintes restent réalisées dans le même appel Claude.
+3. Une requête hors sujet reçoit la réponse fixe configurée, sans recherche de films.
 4. Le backend résout genres, personnes, mots-clés, sociétés ou providers en identifiants TMDB.
 5. `discover_movies`, `search_movies` ou les tools de similarité produisent des candidats.
 6. Pour une contrainte IMDb, `get_movies(include_ratings=true)` enrichit les candidats via OMDb,
@@ -181,9 +185,12 @@ l'onglet « Favoris » récupère les fiches via `POST /api/movies/lookup` avec 
 les fiches sont reconstruites via le MCP.
 
 « Mon compte » permet de s'inscrire avec un username unique et un mot de passe, de se connecter
-et de se déconnecter. L'inscription importe automatiquement les favoris visiteurs et ouvre une
+et de se déconnecter. L'inscription et la connexion importent automatiquement les favoris visiteurs et ouvrent une
 session. Les comptes, sessions et favoris connectés sont conservés **dans PostgreSQL** :
 un redémarrage du backend les conserve. Les favoris visiteurs restent dans leur onglet.
+La fusion évite les doublons. Si le compte atteint 20 favoris, les IDs non transférés restent
+dans la session visiteur ; un message l'indique. Une authentification refusée ne transfère rien.
+À l'inscription, chaque condition du mot de passe est affichée et vérifiée pendant la saisie.
 
 Pour un utilisateur connecté, les favoris proviennent du backend. Pour un visiteur, chaque
 recherche envoie les identifiants de l'onglet à `POST /api/recommendations`.
@@ -193,6 +200,23 @@ correspond pas à la recherche.
 
 Voir [l'explication complète de l'architecture et de la sécurité](docs/authentication.md).
 
+## Sélection de bienvenue
+
+À la première ouverture de la session de l'onglet, une interface présente cinq films au hasard.
+Le visiteur peut les ajouter ou les retirer de ses favoris et accéder au site à tout moment
+avec « Passer cette étape » ou « Continuer vers MovieMatch », même si le catalogue est indisponible.
+Les utilisateurs déjà connectés enregistrent directement leurs choix dans leur compte.
+
+`GET /api/movies/random` utilise uniquement `discover_movies` du MCP : une page tirée au hasard
+parmi les cinq premières pages de films populaires, puis cinq films distincts tirés au hasard
+dans cette page. `include_adult=false` exclut les films adultes ; le seuil de votes configuré
+est conservé. Il s'agit donc d'un tirage parmi ces résultats populaires, pas parmi tout TMDB.
+Les cartes d'accueil utilisent les résumés (titre, année, affiche), sans les appels coûteux
+de casting, plateformes et bandes-annonces. L'onglet Favoris retrouve ensuite les fiches complètes.
+
+`moviematch:welcome-dismissed` dans `sessionStorage` mémorise la fermeture de cet écran pour
+éviter de le réafficher à chaque actualisation ou changement de compte pendant la même session.
+
 ## Tests et qualité
 
 ```powershell
@@ -201,6 +225,7 @@ Set-Location backend
 python -m pytest
 
 Set-Location ../frontend
+npm test
 npm run lint
 npm run build
 ```
@@ -210,6 +235,10 @@ simulés pour tester la validation, le garde-fou, le parsing, la limite de sept 
 des contraintes obligatoires, ainsi que les comptes, les sessions et l'isolation des favoris.
 Les tests PostgreSQL utilisent une base dédiée configurée par les variables `TEST_DB_*`.
 Ils sont exécutés en CI ; localement ils sont ignorés si `TEST_DB_PASSWORD` est absent.
+Les nouveaux tests vérifient aussi les messages de validation précis, la fusion des favoris
+à la connexion, les fusions concurrentes en PostgreSQL, les genres autorisés transmis à Claude
+et les cinq films distincts de la sélection de bienvenue. Le frontend teste ses critères de
+mot de passe et l'envoi des favoris visiteurs à l'inscription comme à la connexion.
 
 ## Limites de cette V1
 

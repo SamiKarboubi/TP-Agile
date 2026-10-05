@@ -9,8 +9,11 @@ export async function api(path, { method = 'GET', body, userId, signal } = {}) {
   })
   const data = response.status === 204 ? null : await response.json().catch(() => ({}))
   if (!response.ok) {
+    const validationMessage = Array.isArray(data?.detail)
+      ? data.detail.map((item) => item.msg?.replace(/^Value error, /, '')).filter(Boolean).join(' ')
+      : ''
     const error = new Error(typeof data?.detail === 'string'
-      ? data.detail : 'La demande a échoué. Vérifiez les informations saisies.')
+      ? data.detail : validationMessage || 'La demande a échoué. Vérifiez les informations saisies.')
     error.status = response.status
     throw error
   }

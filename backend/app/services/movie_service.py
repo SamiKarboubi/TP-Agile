@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import random
 import re
 from typing import Any, Protocol
 import unicodedata
@@ -9,6 +10,7 @@ from app.core.constants import NO_EXACT_MATCH_MESSAGE, RESULTS_MESSAGE
 from app.schemas.intents import FloatRange, IntRange, MovieConstraints, MovieSearchIntent
 from app.schemas.recommendations import MovieResult, RecommendationResponse
 from app.services.errors import MCPServiceError, ServiceConfigurationError
+from app.services.genre_catalog import GenreCatalog
 
 
 class MovieDataClient(Protocol):
@@ -31,9 +33,25 @@ class ResolvedEntities:
 
 
 class MovieRecommendationService:
-    def __init__(self, settings: Settings, mcp: MovieDataClient) -> None:
+    def __init__(self, settings: Settings, mcp: MovieDataClient, genres: GenreCatalog | None = None) -> None:
         self._settings = settings
         self._mcp = mcp
+        self._genres = genres or GenreCatalog(mcp)
+
+    async def random_movies(self) -> list[MovieResult]:
+        # Random page then random selection; summaries keep the welcome screen fast.
+        payload = await self._mcp.call_tool("discover_movies", {
+            "language": self._settings.tmdb_language, "include_adult": False,
+            "sort_by": "popularity.desc", "min_votes": self._settings.default_min_votes,
+            "page": random.randint(1, 5),
+        })
+        results = payload.get("results", [])
+        candidates = _deduplicate([item for item in results if isinstance(item, dict)]) if isinstance(results, list) else []
+        candidates = [item for item in candidates if type(item.get("id")) is int
+                      and item["id"] > 0 and isinstance(item.get("title"), str) and item["title"].strip()]
+        if len(candidates) < 5:
+            raise MCPServiceError("La sélection de bienvenue est indisponible. Vous pouvez accéder directement au site.")
+        return [_to_movie_result(item, {}, None) for item in random.sample(candidates, 5)]
 
     async def recommend(
         self, intent: MovieSearchIntent, favorite_ids: list[int] | None = None
@@ -172,11 +190,9 @@ class MovieRecommendationService:
         resolved = ResolvedEntities()
 
         if constraints.genres or constraints.excluded_genres:
-            payload = await self._mcp.call_tool("get_movie_genres", {})
             available = {
-                _normalize_name(str(item.get("name", ""))): int(item["id"])
-                for item in payload.get("genres", [])
-                if item.get("id") is not None
+                _normalize_name(genre.name): genre.id
+                for genre in await self._genres.get()
             }
             for name in [*constraints.genres, *constraints.excluded_genres]:
                 genre_id = available.get(_normalize_name(name))
