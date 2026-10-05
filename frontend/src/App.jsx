@@ -1,25 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
+import { api } from './api'
+import { MAX_FAVORITES, useAccount } from './useAccount'
+import AccountPanel from './AccountPanel'
 
 const DEFAULT_MAX_LENGTH = 200
-const FAVORITES_KEY = 'moviematch:favorites'
-const MAX_FAVORITES = 20
 const SUGGESTIONS = [
   'Un thriller après 2010, très bien noté',
   'Un film dans le style d’Interstellar',
   'Une comédie française à voir ce soir',
 ]
-
-function readFavoriteIds() {
-  try {
-    const saved = JSON.parse(window.sessionStorage.getItem(FAVORITES_KEY) || '[]')
-    if (!Array.isArray(saved)) return []
-    return [...new Set(saved.filter((id) => Number.isSafeInteger(id) && id > 0))]
-      .slice(0, MAX_FAVORITES)
-  } catch {
-    return []
-  }
-}
 
 function formatRuntime(minutes) {
   if (!minutes) return null
@@ -28,7 +18,7 @@ function formatRuntime(minutes) {
   return hours ? `${hours} h ${remaining ? `${remaining} min` : ''}`.trim() : `${minutes} min`
 }
 
-function MovieCard({ movie, isFavorite, onToggleFavorite, favoriteLimitReached }) {
+function MovieCard({ movie, isFavorite, onToggleFavorite, favoriteLimitReached, disabled }) {
   const offers = [
     ['Abonnement', movie.streaming],
     ['Gratuit', movie.free],
@@ -90,7 +80,7 @@ function MovieCard({ movie, isFavorite, onToggleFavorite, favoriteLimitReached }
               aria-pressed={isFavorite}
               aria-label={isFavorite ? `Retirer ${movie.title} des favoris` : `Ajouter ${movie.title} aux favoris`}
               title={!isFavorite && favoriteLimitReached ? 'Limite de 20 favoris atteinte' : undefined}
-              disabled={!isFavorite && favoriteLimitReached}
+              disabled={disabled || (!isFavorite && favoriteLimitReached)}
               onClick={() => onToggleFavorite(movie)}
             ><span aria-hidden="true">{isFavorite ? '♥' : '♡'}</span> {isFavorite ? 'Dans mes favoris' : 'Ajouter aux favoris'}</button>
           </div>
@@ -101,20 +91,21 @@ function MovieCard({ movie, isFavorite, onToggleFavorite, favoriteLimitReached }
   )
 }
 
-function App() {
+function MovieApp({ account }) {
+  const { favoriteIds, user, ready, busy, identityVersion } = account
   const [message, setMessage] = useState('')
   const [maxLength, setMaxLength] = useState(DEFAULT_MAX_LENGTH)
   const [conversation, setConversation] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [view, setView] = useState('discover')
-  const [favoriteIds, setFavoriteIds] = useState(readFavoriteIds)
   const [favoriteMovies, setFavoriteMovies] = useState({})
-  const [favoritesLoading, setFavoritesLoading] = useState(false)
   const [favoritesError, setFavoritesError] = useState('')
-  const [storageError, setStorageError] = useState(false)
+  const [favoritesRetry, setFavoritesRetry] = useState(0)
   const endRef = useRef(null)
   const textRef = useRef(null)
+  const favoritesLoading = view === 'favorites' && ready && !favoritesError
+    && favoriteIds.some((id) => !favoriteMovies[id])
 
   useEffect(() => {
     fetch('/api/config')
@@ -127,61 +118,53 @@ function App() {
     if (view === 'discover') endRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [conversation, loading, view])
 
-  function saveFavoriteIds(ids) {
-    setFavoriteIds(ids)
-    try {
-      window.sessionStorage.setItem(FAVORITES_KEY, JSON.stringify(ids))
-      setStorageError(false)
-    } catch {
-      setStorageError(true)
-    }
-  }
+  useEffect(() => {
+    if (view !== 'discover') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [view])
 
-  async function showFavorites() {
-    setView('favorites')
+  useEffect(() => {
+    if (view !== 'favorites' || !ready) return
     const missing = favoriteIds.filter((id) => !favoriteMovies[id])
-    if (!missing.length || favoritesLoading) return
-
-    setFavoritesLoading(true)
-    setFavoritesError('')
-    try {
-      const response = await fetch('/api/movies/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: missing }),
+    if (!missing.length) return
+    const controller = new AbortController()
+    api('/movies/lookup', { method: 'POST', body: { ids: missing }, signal: controller.signal })
+      .then((data) => {
+        if (controller.signal.aborted) return
+        if (!Array.isArray(data.movies) || data.movies.length !== missing.length
+          || missing.some((id) => !data.movies.some((movie) => movie.id === id))) {
+          throw new Error('Certaines fiches de films sont indisponibles.')
+        }
+        setFavoriteMovies((current) => ({
+          ...current,
+          ...Object.fromEntries(data.movies.map((movie) => [movie.id, movie])),
+        }))
+        setFavoritesError('')
       })
-      if (!response.ok) throw new Error('Impossible de retrouver vos films favoris.')
-      const data = await response.json()
-      if (!Array.isArray(data.movies) || data.movies.length !== missing.length
-        || missing.some((id) => !data.movies.some((movie) => movie.id === id))) {
-        throw new Error('Certaines fiches de films sont indisponibles.')
-      }
-      setFavoriteMovies((current) => ({
-        ...current,
-        ...Object.fromEntries(data.movies.map((movie) => [movie.id, movie])),
-      }))
-    } catch (requestError) {
-      setFavoritesError(requestError.message || 'Impossible de charger les favoris.')
-    } finally {
-      setFavoritesLoading(false)
-    }
+      .catch((requestError) => {
+        if (!controller.signal.aborted) setFavoritesError(requestError.message || 'Impossible de charger les favoris.')
+      })
+    return () => controller.abort()
+  }, [view, favoriteIds, favoriteMovies, favoritesRetry, ready])
+
+  function showFavorites() {
+    setFavoritesError('')
+    setView('favorites')
+    account.refresh()
   }
 
-  function toggleFavorite(movie) {
+  async function toggleFavorite(movie) {
+    const version = identityVersion.current
     setFavoritesError('')
-    if (favoriteIds.includes(movie.id)) {
-      saveFavoriteIds(favoriteIds.filter((id) => id !== movie.id))
-      return
+    const success = await account.toggleFavorite(movie.id)
+    if (success && version === identityVersion.current) {
+      setFavoriteMovies((movies) => ({ ...movies, [movie.id]: movie }))
     }
-    if (favoriteIds.length >= MAX_FAVORITES) return
-    setFavoriteMovies((movies) => ({ ...movies, [movie.id]: movie }))
-    saveFavoriteIds([...favoriteIds, movie.id])
   }
 
   async function submit(event) {
     event?.preventDefault()
     const trimmed = message.trim()
-    if (!trimmed || loading) return
+    if (!trimmed || loading || !ready || busy) return
     if (trimmed.length > maxLength) {
       setError(`Votre message dépasse la limite de ${maxLength} caractères.`)
       return
@@ -191,28 +174,28 @@ function App() {
     setMessage('')
     setError('')
     setLoading(true)
+    const version = identityVersion.current
 
     try {
-      const response = await fetch('/api/recommendations', {
+      const data = await api('/recommendations', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed, favorite_ids: favoriteIds }),
+        userId: user?.id,
+        body: { message: trimmed, favorite_ids: user ? [] : favoriteIds },
       })
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        throw new Error(typeof data.detail === 'string' ? data.detail : 'La recherche a échoué.')
-      }
+      if (version !== identityVersion.current) return
       setConversation((items) => [
         ...items,
         { role: 'assistant', text: data.message, movies: data.movies ?? [] },
       ])
     } catch (requestError) {
+      if (requestError.status === 401) await account.refresh()
+      if (version !== identityVersion.current) return
       setConversation((items) => [...items, {
         role: 'assistant',
         text: requestError.message || 'Le service est temporairement indisponible.',
       }])
     } finally {
-      setLoading(false)
+      if (version === identityVersion.current) setLoading(false)
     }
   }
 
@@ -225,6 +208,7 @@ function App() {
 
   return (
     <main className="app-shell">
+      <div>
       <header className="app-header">
         <div className="brand-mark" aria-hidden="true">M<span>.</span></div>
         <div className="brand-copy">
@@ -234,8 +218,17 @@ function App() {
         <nav className="view-nav" aria-label="Navigation principale">
           <button type="button" className={view === 'discover' ? 'active' : ''} aria-current={view === 'discover' ? 'page' : undefined} onClick={() => setView('discover')}>Découvrir</button>
           <button type="button" className={view === 'favorites' ? 'active' : ''} aria-current={view === 'favorites' ? 'page' : undefined} onClick={showFavorites}>Favoris <span>{favoriteIds.length}</span></button>
+          <button type="button" className={view === 'account' ? 'active' : ''} aria-current={view === 'account' ? 'page' : undefined} onClick={() => setView('account')}>{user ? user.username : 'Mon compte'}</button>
         </nav>
       </header>
+      {!ready && !account.accountError && <p className="account-status" role="status">Vérification de la connexion…</p>}
+      {account.accountError && <div className="account-status" role="alert">
+        <p className="error">{account.accountError}</p>
+        {!ready && <button type="button" onClick={account.refresh}>Réessayer</button>}
+      </div>}
+      </div>
+
+      {view === 'account' && <AccountPanel account={account} onDone={() => setView('discover')} />}
 
       <section className="conversation" aria-live="polite" aria-label="Conversation" hidden={view !== 'discover'}>
         {conversation.length === 0 && (
@@ -269,6 +262,7 @@ function App() {
                       isFavorite={favoriteIds.includes(movie.id)}
                       onToggleFavorite={toggleFavorite}
                       favoriteLimitReached={favoriteIds.length >= MAX_FAVORITES}
+                      disabled={!ready || busy}
                     />
                   ))}
                 </div>
@@ -291,9 +285,10 @@ function App() {
           <div className="favorites-intro">
             <span className="eyebrow">MA SÉLECTION</span>
             <h2>Mes <em>favoris.</em></h2>
-            <p>{favoriteIds.length} film{favoriteIds.length > 1 ? 's' : ''} enregistré{favoriteIds.length > 1 ? 's' : ''} dans cet onglet. La liste disparaît à la fin de la session.</p>
+            <p>{favoriteIds.length} film{favoriteIds.length > 1 ? 's' : ''} enregistré{favoriteIds.length > 1 ? 's' : ''} {user ? `pour ${user.username}.` : 'dans cet onglet. La liste disparaît à la fin de la session.'}</p>
+            {!user && <button className="account-invite" type="button" onClick={() => setView('account')}>Créer un compte pour retrouver ma sélection ↗</button>}
           </div>
-          {storageError && <p className="error" role="alert">Le navigateur bloque le stockage de session : les favoris risquent de disparaître après actualisation.</p>}
+          {!user && account.storageError && <p className="error" role="alert">Le navigateur bloque le stockage de session : les favoris risquent de disparaître après actualisation.</p>}
           {favoriteIds.length === 0 ? (
             <div className="favorites-empty">
               <p>Votre sélection est encore vide.</p>
@@ -304,7 +299,7 @@ function App() {
               {favoritesLoading && <p className="favorites-status" role="status">Chargement des fiches…</p>}
               {favoritesError && <div className="favorites-status" role="alert">
                 <p>{favoritesError}</p>
-                <button type="button" onClick={showFavorites}>Réessayer</button>
+                <button type="button" onClick={() => { setFavoritesError(''); setFavoritesRetry((value) => value + 1) }}>Réessayer</button>
               </div>}
               <div className="movie-list">
                 {favoriteIds.map((id) => favoriteMovies[id] && (
@@ -314,6 +309,7 @@ function App() {
                     isFavorite
                     onToggleFavorite={toggleFavorite}
                     favoriteLimitReached={false}
+                    disabled={!ready || busy}
                   />
                 ))}
               </div>
@@ -337,9 +333,9 @@ function App() {
             onKeyDown={handleKeyDown}
             rows="2"
             maxLength={maxLength + 1}
-            disabled={loading}
+            disabled={loading || !ready || busy}
           />
-          <button type="submit" disabled={loading || !message.trim() || message.trim().length > maxLength}>
+          <button type="submit" disabled={loading || !ready || busy || !message.trim() || message.trim().length > maxLength}>
             <span>Rechercher</span><span aria-hidden="true">↗</span>
           </button>
         </form>
@@ -347,6 +343,12 @@ function App() {
       </footer>}
     </main>
   )
+}
+
+function App() {
+  const account = useAccount()
+  // Reset the conversation and movie cache whenever the connected account changes.
+  return <MovieApp key={account.user?.id || 'guest'} account={account} />
 }
 
 export default App

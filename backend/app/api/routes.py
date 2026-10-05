@@ -1,6 +1,8 @@
 from typing import Protocol
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from app.api.accounts import SESSION_COOKIE
+from app.services.auth_service import AuthService
 
 from app.core.config import Settings
 from app.core.constants import OUT_OF_SCOPE_MESSAGE
@@ -31,6 +33,7 @@ def build_router(
     settings: Settings,
     analyzer: IntentAnalyzer,
     recommender: Recommender,
+    auth: AuthService,
 ) -> APIRouter:
     router = APIRouter(prefix="/api")
 
@@ -39,7 +42,7 @@ def build_router(
         return PublicConfigResponse(max_user_message_length=settings.max_user_message_length)
 
     @router.post("/recommendations", response_model=RecommendationResponse)
-    async def recommendations(request: RecommendationRequest) -> RecommendationResponse:
+    async def recommendations(request: RecommendationRequest, http_request: Request) -> RecommendationResponse:
         if len(request.message) > settings.max_user_message_length:
             raise HTTPException(
                 status_code=422,
@@ -49,10 +52,15 @@ def build_router(
                 ),
             )
 
+        user = auth.current_user(http_request.cookies.get(SESSION_COOKIE))
+        expected = http_request.headers.get("X-MovieMatch-User")
+        if expected is not None and (user is None or expected != user.id):
+            raise HTTPException(401, "Votre session a expiré ou le compte connecté a changé.")
         intent = await analyzer.analyze(request.message)
         if not intent.is_movie_request:
             return RecommendationResponse(message=OUT_OF_SCOPE_MESSAGE, movies=[])
-        return await recommender.recommend(intent, list(dict.fromkeys(request.favorite_ids)))
+        favorite_ids = auth.store.favorite_ids(user.id) if user else list(dict.fromkeys(request.favorite_ids))
+        return await recommender.recommend(intent, favorite_ids)
 
     @router.post("/movies/lookup", response_model=MovieLookupResponse)
     async def lookup_movies(request: MovieLookupRequest) -> MovieLookupResponse:

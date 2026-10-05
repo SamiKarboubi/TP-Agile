@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     default_min_votes: int = Field(default=200, ge=0)
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
     log_level: str = "INFO"
+    auth_cookie_secure: bool = False
+    auth_session_hours: int = Field(default=24, ge=1, le=168)
 
     @field_validator("tmdb_region")
     @classmethod
